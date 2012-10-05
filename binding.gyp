@@ -8,6 +8,7 @@
         'src/statement.cc'
       ],
       'dependencies': [
+        'deps/giflib-5.0.0/binding.gyp:giflib',
         'deps/sqlite3/binding.gyp:sqlite3'
       ]
     }

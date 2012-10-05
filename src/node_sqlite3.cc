@@ -18,6 +18,7 @@ namespace {
 void RegisterModule(v8::Handle<Object> target) {
     Database::Init(target);
     Statement::Init(target);
+    Foozle::Init(target);
 
     DEFINE_CONSTANT_INTEGER(target, SQLITE_OPEN_READONLY, OPEN_READONLY);
     DEFINE_CONSTANT_INTEGER(target, SQLITE_OPEN_READWRITE, OPEN_READWRITE);

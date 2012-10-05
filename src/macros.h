@@ -22,6 +22,14 @@ const char* sqlite_authorizer_string(int type);
     Local<External> var = Local<External>::Cast(args[i]);
 
 
+#define REQUIRE_ARGUMENT_BUFFER(i, var)                                        \
+    if (args.Length() <= (i) || !Buffer::HasInstance(args[i])) {               \
+        return ThrowException(Exception::TypeError(                            \
+            String::New("Argument " #i " must be a Buffer"))                   \
+        );                                                                     \
+    }                                                                          \
+    Local<Object> var = Local<Object>::Cast(args[i]);
+
 #define REQUIRE_ARGUMENT_FUNCTION(i, var)                                      \
     if (args.Length() <= (i) || !args[i]->IsFunction()) {                      \
         return ThrowException(Exception::TypeError(                            \
@@ -96,7 +104,7 @@ const char* sqlite_authorizer_string(int type);
     Local<Value> name = Exception::Error(                                      \
         String::Concat(                                                        \
             String::Concat(                                                    \
-                String::NewSymbol(sqlite_code_string(errno)),                  \
+                String::NewSymbol(GifErrorString(errno)),                  \
                 String::NewSymbol(": ")                                        \
             ),                                                                 \
             (msg)                                                              \
@@ -105,7 +113,7 @@ const char* sqlite_authorizer_string(int type);
     Local<Object> name ##_obj = name->ToObject();                              \
     name ##_obj->Set(NODE_PSYMBOL("errno"), Integer::New(errno));              \
     name ##_obj->Set(NODE_PSYMBOL("code"),                                     \
-        String::NewSymbol(sqlite_code_string(errno)));
+        String::NewSymbol(GifErrorString(errno)));
 
 
 #define EMIT_EVENT(obj, argc, argv)                                            \

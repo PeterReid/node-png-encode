@@ -7,6 +7,7 @@
 #include <queue>
 
 #include <sqlite3.h>
+#include <gif_lib.h>
 #include "async.h"
 
 using namespace v8;
@@ -16,6 +17,72 @@ namespace node_sqlite3 {
 
 class Database;
 
+
+class Foozle : public ObjectWrap {
+public:
+    Foozle();
+    virtual ~Foozle();
+    
+    static Persistent<FunctionTemplate> constructor_template;
+    static void Init(Handle<Object> target);
+    
+    static Handle<Value> New(const Arguments& args);
+
+    static Handle<Value> Mash(const Arguments& args);
+    
+    
+    struct Baton {
+        uv_work_t request;
+        Foozle* foozle;
+        Persistent<Function> callback;
+        //int status;
+        //std::string message;
+
+        Baton(Foozle* foozle_, Handle<Function> cb_) :
+                foozle(foozle_) {
+            foozle->Ref();
+            request.data = this;
+            callback = Persistent<Function>::New(cb_);
+        }
+        virtual ~Baton() {
+            printf("~Baton");
+            foozle->Unref();
+            callback.Dispose();
+            printf("~Baton}");
+        }
+    };
+
+    struct SlurpBaton : Baton {
+        Persistent<Object> buffer;
+        const char *gif_buffer;
+        size_t gif_length;
+        size_t spewed_length;
+        int status;
+        
+        SlurpBaton(Foozle *foozle, Handle<Function> cb_, Handle<Object> buffer_):
+            Baton(foozle, cb_)/*, buffer(buffer_)*/, status(GIF_OK) {
+            buffer = Persistent<Object>::New(buffer_);
+            gif_buffer = Buffer::Data(buffer_);
+            gif_length = Buffer::Length(buffer_);
+            spewed_length = 0;
+        }
+        
+        virtual ~SlurpBaton() {
+            printf("~SlurpBaton");
+            buffer.Dispose();
+            printf("~SlurpBaton}");
+        }
+        
+        static int ReadMemoryGif (GifFileType *gif_file, GifByteType *buffer, int size);
+    };
+    
+    static void Work_BeginSlurp(Baton* baton);
+    static void Work_Slurp(uv_work_t* req);
+    static void Work_AfterSlurp(uv_work_t* req);
+    
+private:
+    unsigned char *pixels;
+};
 
 class Database : public ObjectWrap {
 public:
