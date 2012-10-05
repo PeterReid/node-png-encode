@@ -222,3 +222,12 @@ void Foozle::Work_AfterStretch(uv_work_t* req) {
     delete baton;
 }
 
+
+
+namespace {
+  void RegisterModule(v8::Handle<Object> target) {
+      Foozle::Init(target);
+  }
+}
+
+NODE_MODULE(node_gifblobber, RegisterModule);
