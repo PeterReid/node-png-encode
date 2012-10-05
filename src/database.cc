@@ -72,7 +72,32 @@ Handle<Value> Foozle::New(const Arguments& args)
 }
 
 Handle<Value> Foozle::Mash(const Arguments& args)
-{
+{ 
+    HandleScope scope;
+    
+    Foozle* foozle = ObjectWrap::Unwrap<Foozle>(args.This());
+    
+    REQUIRE_ARGUMENT_DOUBLE(0, source_left);
+    REQUIRE_ARGUMENT_DOUBLE(1, source_right);
+    REQUIRE_ARGUMENT_DOUBLE(2, source_top);
+    REQUIRE_ARGUMENT_DOUBLE(3, source_bottom);
+    REQUIRE_ARGUMENT_INTEGER(4, result_width);
+    REQUIRE_ARGUMENT_INTEGER(5, result_height);
+    REQUIRE_ARGUMENT_BUFFER(6, dest_buffer);
+    REQUIRE_ARGUMENT_FUNCTION(7, callback);
+    
+    if (result_width <= 0 || result_height <= 0 || result_width*result_height*4 != Buffer::Length(dest_buffer)) {
+        return ThrowException(Exception::Error( 
+            String::New("Buffer length is not consistent with given width and height"))
+        );  
+    }
+    
+    
+    StretchBaton *baton = new StretchBaton(foozle, callback, dest_buffer, 
+        source_left, source_right, source_top, source_bottom,
+        result_width, result_height);
+    Work_BeginStretch(baton);
+    
     return args.This();
 }
 
@@ -139,23 +164,6 @@ void Foozle::Work_Slurp(uv_work_t* req) {
     DGifCloseFile(gif_file);
     
     foozle->pixels = filtered;
-    
-    /*baton->status = sqlite3_open_v2(
-        baton->filename.c_str(),
-        &db->handle,
-        baton->mode,
-        NULL
-    );
-
-    if (baton->status != SQLITE_OK) {
-        baton->message = std::string(sqlite3_errmsg(db->handle));
-        sqlite3_close(db->handle);
-        db->handle = NULL;
-    }
-    else {
-        // Set default database handle values.
-        sqlite3_busy_timeout(db->handle, 1000);
-    }*/
 }
 
 void Foozle::Work_AfterSlurp(uv_work_t* req) {
@@ -177,21 +185,43 @@ void Foozle::Work_AfterSlurp(uv_work_t* req) {
         printf("After teh try-catch\n");
     }
     printf("hmm\n");
-    //else if (!db->open) {
-        //Local<Value> args[] = { String::NewSymbol("error"), argv[0] };
-        //EMIT_EVENT(db->handle_, 2, args);
-    //}
-
-    //if (db->open) {
-        //Local<Value> args[] = { String::NewSymbol("open") };
-        //EMIT_EVENT(db->handle_, 1, args);
-        //db->Process();
-    //}
-
+    
     delete baton;
-    printf("hmm?\n");
 }
 
+
+void Foozle::Work_BeginStretch(Baton* baton) {
+    int status = uv_queue_work(uv_default_loop(),
+            &baton->request, Work_Stretch, Work_AfterStretch);
+    assert(status == 0);
+}
+
+void Foozle::Work_Stretch(uv_work_t* req) {
+    StretchBaton* baton = static_cast<StretchBaton*>(req->data);
+    Foozle* foozle = baton->foozle;
+    
+    int count = baton->result_width * baton->result_height;
+    for (int i = 0; i < count; i++) {
+        baton->dest_pixels[i] = 0xff00ffff;
+    }
+}
+
+void Foozle::Work_AfterStretch(uv_work_t* req) {
+    HandleScope scope;
+    StretchBaton *baton = static_cast<StretchBaton *>(req->data);
+    Foozle *foozle = baton->foozle;
+
+    Local<Value> argv[1];
+    argv[0] = Local<Value>::New(baton->dest_buffer);
+    
+    if (!baton->callback.IsEmpty() && baton->callback->IsFunction()) {
+        TRY_CATCH_CALL(foozle->handle_, baton->callback, 1, argv);
+        printf("After teh try-catch\n");
+    }
+    printf("hmm\n");
+    
+    delete baton;
+}
 
 Persistent<FunctionTemplate> Database::constructor_template;
 

@@ -47,6 +47,22 @@ const char* sqlite_authorizer_string(int type);
     }                                                                          \
     String::Utf8Value var(args[i]->ToString());
 
+#define REQUIRE_ARGUMENT_INTEGER(i, var)                                       \
+    if (args.Length() <= (i) || !args[i]->IsInt32()) {                         \
+        return ThrowException(Exception::TypeError(                            \
+            String::New("Argument " #i " must be an integer"))                 \
+        );                                                                     \
+    }                                                                          \
+    int var = args[i]->Int32Value();
+
+#define REQUIRE_ARGUMENT_DOUBLE(i, var)                                        \
+    if (args.Length() <= (i) || !args[i]->IsNumber()) {                        \
+        return ThrowException(Exception::TypeError(                            \
+            String::New("Argument " #i " must be a number"))                   \
+        );                                                                     \
+    }                                                                          \
+    double var = args[i]->NumberValue();
+
 
 #define OPTIONAL_ARGUMENT_FUNCTION(i, var)                                     \
     Local<Function> var;                                                       \
