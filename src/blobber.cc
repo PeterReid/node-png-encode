@@ -2,231 +2,181 @@
 #include <node.h>
 #include <node_buffer.h>
 #include <algorithm>
+#include <png.h>
 
 #include "macros.h"
 #include "blobber.h"
+#include "byte_builder.h"
 
 using namespace node_sqlite3;
 
 
+void vector_write_fn(png_structp png_ptr, png_bytep data, png_size_t size) {
+	ByteBuilder *buffer = (ByteBuilder *)png_get_io_ptr(png_ptr);
+	buffer->append((uint8_t *)data, (size_t)size);
+}
+void vector_flush_fn(png_structp png_ptr) {
+}
 
-#define RADAR_COLOR_COUNT 15
+
+int write_png(const png_byte *data, size_t width, size_t height, ByteBuilder *buffer) {
+  /* Initialize the write struct. */
+  png_structp png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
+  if (png_ptr == NULL) {
+    return -1;
+  }
+
+  /* Initialize the info struct. */
+  png_infop info_ptr = png_create_info_struct(png_ptr);
+  if (info_ptr == NULL) {
+    png_destroy_write_struct(&png_ptr, NULL);
+    return -1;
+  }
+
+  /* Set up error handling. */
+  if (setjmp(png_jmpbuf(png_ptr))) {
+    png_destroy_write_struct(&png_ptr, &info_ptr);
+    return -1;
+  }
+
+  /*const int bit_depth = 4;
+  png_color radar_colors[RADAR_COLOR_COUNT] =
+              { {0,0,0},
+                {4,233,231}, // teal
+                {1, 159, 244}, // light blue
+                {3, 0, 244}, // blue
+                {2, 253, 2}, // light green
+                {1, 197, 1}, // green
+                {0, 142, 0}, // dark green
+                {253, 248, 2}, // yellow
+                {229, 188, 0}, // dark yellow
+                {253,139,0}, // orange
+                {212,0,0}, // light red
+                {200,0,0}, // medium red?
+                {188,0,0}, // dark red
+                {248,0,253}, // purple
+                {152,84,198} // grayish-purple
+           };
+
+  png_set_PLTE(png_ptr, info_ptr, radar_colors, RADAR_COLOR_COUNT );
+  png_byte trans[] = {0};
+    
+  png_set_tRNS(png_ptr, info_ptr, trans, 1, 0);
+  */
+  /* Set image attributes. */
+  png_set_IHDR(png_ptr,
+               info_ptr,
+               (png_uint_32)width,
+               (png_uint_32)height,
+               8,
+               PNG_COLOR_TYPE_RGB_ALPHA,
+               PNG_INTERLACE_NONE,
+               PNG_COMPRESSION_TYPE_DEFAULT,
+               PNG_FILTER_TYPE_DEFAULT);
+  
+  /* Initialize rows of PNG. */
+  png_byte **row_pointers = new png_byte *[height];
+  png_byte *row_pointer = const_cast<png_byte *>(data);
+  png_uint_32 bytes_per_row = width * 4;
+  
+  for (size_t y = 0; y < height; ++y) {
+    row_pointers[y] = row_pointer;
+    row_pointer += bytes_per_row;
+  }
+
+  /* Actually write the image data. */
+	png_set_write_fn(png_ptr, (png_voidp)buffer, vector_write_fn, vector_flush_fn);
+  png_set_rows(png_ptr, info_ptr, row_pointers);
+  png_write_png(png_ptr, info_ptr, PNG_TRANSFORM_IDENTITY, NULL);
+    
+  delete[] row_pointers;
+
+  /* Finish writing. */
+  png_destroy_write_struct(&png_ptr, &info_ptr);
+
+	return 0;
+}
+
 
 
 Persistent<FunctionTemplate> Foozle::constructor_template;
 
-void Foozle::Init(Handle<Object> target)
-{
-    HandleScope scope;
+struct Baton {
+    uv_work_t request;
+    Persistent<Function> callback;
+    Persistent<Object> context;
     
-    Local<FunctionTemplate> t = FunctionTemplate::New(New);
-    
-    constructor_template = Persistent<FunctionTemplate>::New(t);
-    constructor_template->InstanceTemplate()->SetInternalFieldCount(1);
-    constructor_template->SetClassName(String::NewSymbol("Foozle"));
-    
-    NODE_SET_PROTOTYPE_METHOD(constructor_template, "mash", Mash);
-    
-    target->Set(String::NewSymbol("Foozle"), 
-        constructor_template->GetFunction());
-        
-}
-    
-Foozle::Foozle()
-{
-    pixels = NULL;
-}
-
-Foozle::~Foozle()
-{
-    delete[] pixels;
-    printf("Freed\n");
-}
-    
-Handle<Value> Foozle::New(const Arguments& args)
-{
-    HandleScope scope;
-
-    if (!args.IsConstructCall()) {
-        return ThrowException(Exception::TypeError(
-            String::New("Use the new operator to create new Foozle objects"))
-        );
+    Baton(Handle<Function> cb_) {
+        request.data = this;
+        callback = Persistent<Function>::New(cb_);
     }
+    virtual ~Baton() {
+        callback.Dispose();
+        context.Dispose();
+    }
+};
+
+struct EncodeBaton : Baton {
+    Persistent<Object> buffer;
+    ByteBuilder png_bytes;
+    png_byte *pixel_bytes;
+    size_t width;
+    size_t height;
+    
+    EncodeBaton(Handle<Function> cb_, Handle<Object> buffer_) : Baton(cb_), png_bytes(1024*50) {
+        buffer = Persistent<Object>::New(buffer_);
+        pixel_bytes = (png_byte *)Buffer::Data(buffer);
+    }
+    
+    static void Work(uv_work_t *req) {
+        EncodeBaton *baton = static_cast<EncodeBaton *>(req->data);
+        int write_result = write_png(baton->pixel_bytes, baton->width, baton->height, &baton->png_bytes);
+        printf("write_result = %d\n", write_result);
+    }
+    
+    static void After(uv_work_t *req) {
+        HandleScope scope;
+        EncodeBaton *baton = static_cast<EncodeBaton *>(req->data);
+        
+        Buffer *buffer = Buffer::New(baton->png_bytes.length);
+        baton->png_bytes.copy_to( Buffer::Data(buffer) );
+        
+        Local<Value> argv[2];
+        argv[0] = Local<Value>::New(Null());
+        argv[1] = scope.Close(buffer->handle_);
+        
+        //LocLocal<Value>::New(Null())
+        
+        if (!baton->callback.IsEmpty() && baton->callback->IsFunction()) {
+            TRY_CATCH_CALL(baton->context, baton->callback, 2, argv);
+            printf("After teh try-catch\n");
+        }
+        
+        delete baton;
+    }
+};
+
+static Handle<Value> Encode(const Arguments& args) {
+    HandleScope scope;
 
     REQUIRE_ARGUMENT_BUFFER(0, buffer);
     REQUIRE_ARGUMENT_FUNCTION(1, callback);
+
+    EncodeBaton *baton = new EncodeBaton(callback, buffer);
+    baton->width = 1;
+    baton->height = 1;
+    baton->context = Persistent<Object>::New(args.This());
     
-    Foozle* foozle = new Foozle();
+    uv_queue_work(uv_default_loop(),
+        &baton->request, &baton->Work, &baton->After);
     
-    foozle->Wrap(args.This());
-
-    args.This()->Set(String::NewSymbol("fooLevel"), String::NewSymbol("bazzle"), ReadOnly);
-    //args.This()->Set(String::NewSymbol("mode"), Integer::New(mode), ReadOnly);
-
-    // Start opening the database.
-    SlurpBaton *baton = new SlurpBaton(foozle, callback, buffer);
-    Work_BeginSlurp(baton);
-
-    return args.This();
+    return scope.Close(String::New("back from encode!"));
 }
-
-Handle<Value> Foozle::Mash(const Arguments& args)
-{ 
-    HandleScope scope;
-    
-    Foozle* foozle = ObjectWrap::Unwrap<Foozle>(args.This());
-    
-    REQUIRE_ARGUMENT_DOUBLE(0, source_left);
-    REQUIRE_ARGUMENT_DOUBLE(1, source_right);
-    REQUIRE_ARGUMENT_DOUBLE(2, source_top);
-    REQUIRE_ARGUMENT_DOUBLE(3, source_bottom);
-    REQUIRE_ARGUMENT_INTEGER(4, result_width);
-    REQUIRE_ARGUMENT_INTEGER(5, result_height);
-    REQUIRE_ARGUMENT_BUFFER(6, dest_buffer);
-    REQUIRE_ARGUMENT_FUNCTION(7, callback);
-    
-    if (result_width <= 0 || result_height <= 0 || result_width*result_height*4 != Buffer::Length(dest_buffer)) {
-        return ThrowException(Exception::Error( 
-            String::New("Buffer length is not consistent with given width and height"))
-        );  
-    }
-    
-    
-    StretchBaton *baton = new StretchBaton(foozle, callback, dest_buffer, 
-        source_left, source_right, source_top, source_bottom,
-        result_width, result_height);
-    Work_BeginStretch(baton);
-    
-    return args.This();
-}
-
-
-
-void Foozle::Work_BeginSlurp(Baton* baton) {
-    int status = uv_queue_work(uv_default_loop(),
-        &baton->request, Work_Slurp, Work_AfterSlurp);
-    assert(status == 0);
-}
-
-int Foozle::SlurpBaton::ReadMemoryGif (GifFileType *gif_file, GifByteType *buffer, int size) {
-  SlurpBaton *baton = static_cast<SlurpBaton *>(gif_file->UserData);
-  if (baton->spewed_length == baton->gif_length) {
-    return 0;
-  }
-
-  size_t copy_length = baton->gif_length - baton->spewed_length;
-  if (copy_length > (size_t)size) {
-    // Trim to request
-    copy_length = (size_t)size;
-  }
-  
-  memcpy(buffer, baton->gif_buffer + baton->spewed_length, copy_length);
-  baton->spewed_length += copy_length;
-  return copy_length;
-}
-
-static inline int clamp(int inclusive_min, int x, int inclusive_max) {
-  return x <= inclusive_min ? inclusive_min
-       : x >= inclusive_max ? inclusive_max
-       : x;
-}
-
-void Foozle::Work_Slurp(uv_work_t* req) {
-    SlurpBaton* baton = static_cast<SlurpBaton*>(req->data);
-    Foozle* foozle = baton->foozle;
-
-    baton->status = GIF_OK;
-    GifFileType *gif_file = DGifOpen(baton, SlurpBaton::ReadMemoryGif, &baton->status);
-    if (baton->status != GIF_OK) {
-        DGifCloseFile(gif_file);
-        return;
-    }
-    printf("DGifOpen seems to have worked...\n");
-    
-    baton->status = DGifSlurp(gif_file);
-    
-    if (baton->status != GIF_OK) {
-        DGifCloseFile(gif_file);
-        return;
-    }
-
-    printf("Width = %d, height = %d\n", gif_file->SWidth, gif_file->SHeight);
-
-    int pixel_count = gif_file->SWidth * gif_file->SHeight;
-    unsigned char *filtered = new unsigned char[pixel_count];
-    unsigned char *unfiltered = gif_file->SavedImages[0].RasterBits;
-    const int filterThreshold = 7;
-    for (int i = 0; i < pixel_count; i++) {
-      filtered[i] = clamp(0, (int)unfiltered[i] - filterThreshold, RADAR_COLOR_COUNT-1);  
-    }
-
-    DGifCloseFile(gif_file);
-    
-    foozle->pixels = filtered;
-}
-
-void Foozle::Work_AfterSlurp(uv_work_t* req) {
-    HandleScope scope;
-    SlurpBaton* baton = static_cast<SlurpBaton*>(req->data);
-    Foozle* foozle = baton->foozle;
-
-    Local<Value> argv[1];
-    if (baton->status != GIF_OK) {
-        EXCEPTION(String::New("GIF deocode failed"), baton->status, exception);
-        argv[0] = exception;
-    }
-    else {
-        argv[0] = Local<Value>::New(Null());
-    }
-
-    if (!baton->callback.IsEmpty() && baton->callback->IsFunction()) {
-        TRY_CATCH_CALL(foozle->handle_, baton->callback, 1, argv);
-        printf("After teh try-catch\n");
-    }
-    printf("hmm\n");
-    
-    delete baton;
-}
-
-
-void Foozle::Work_BeginStretch(Baton* baton) {
-    int status = uv_queue_work(uv_default_loop(),
-            &baton->request, Work_Stretch, Work_AfterStretch);
-    assert(status == 0);
-}
-
-void Foozle::Work_Stretch(uv_work_t* req) {
-    StretchBaton* baton = static_cast<StretchBaton*>(req->data);
-    Foozle* foozle = baton->foozle;
-    
-    int count = baton->result_width * baton->result_height;
-    for (int i = 0; i < count; i++) {
-        baton->dest_pixels[i] = 0xff00ffff;
-    }
-}
-
-void Foozle::Work_AfterStretch(uv_work_t* req) {
-    HandleScope scope;
-    StretchBaton *baton = static_cast<StretchBaton *>(req->data);
-    Foozle *foozle = baton->foozle;
-
-    Local<Value> argv[1];
-    argv[0] = Local<Value>::New(baton->dest_buffer);
-    
-    if (!baton->callback.IsEmpty() && baton->callback->IsFunction()) {
-        TRY_CATCH_CALL(foozle->handle_, baton->callback, 1, argv);
-        printf("After teh try-catch\n");
-    }
-    printf("hmm\n");
-    
-    delete baton;
-}
-
 
 
 namespace {
   void RegisterModule(v8::Handle<Object> target) {
-      Foozle::Init(target);
+    NODE_SET_METHOD(target, "encode", Encode);
   }
 }
 
