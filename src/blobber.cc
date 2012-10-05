@@ -1,7 +1,5 @@
-#include <string.h>
 #include <node.h>
 #include <node_buffer.h>
-#include <algorithm>
 #include <png.h>
 
 #include "macros.h"
@@ -96,10 +94,6 @@ int write_png(const png_byte *data, size_t width, size_t height, ByteBuilder *bu
 
 	return 0;
 }
-
-
-
-Persistent<FunctionTemplate> Foozle::constructor_template;
 
 struct Baton {
     uv_work_t request;
