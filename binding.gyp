@@ -3,13 +3,11 @@
     {
       'target_name': 'node_sqlite3',
       'sources': [
-        'src/database.cc',
-        'src/node_sqlite3.cc',
-        'src/statement.cc'
+        'src/blobber.cc',
+        'src/node_sqlite3.cc'
       ],
       'dependencies': [
-        'deps/giflib-5.0.0/binding.gyp:giflib',
-        'deps/sqlite3/binding.gyp:sqlite3'
+        'deps/giflib-5.0.0/binding.gyp:giflib'
       ]
     }
   ]
