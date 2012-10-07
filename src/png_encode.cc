@@ -3,11 +3,12 @@
 #include <png.h>
 
 #include "macros.h"
-#include "blobber.h"
+#include "png_encode.h"
 #include "byte_builder.h"
 
-using namespace node_sqlite3;
+using namespace node_png_encode;
 
+static const int BYTES_PER_PIXEL = 4;
 
 void vector_write_fn(png_structp png_ptr, png_bytep data, png_size_t size) {
 	ByteBuilder *buffer = (ByteBuilder *)png_get_io_ptr(png_ptr);
@@ -75,7 +76,7 @@ int write_png(const png_byte *data, size_t width, size_t height, ByteBuilder *bu
   /* Initialize rows of PNG. */
   png_byte **row_pointers = new png_byte *[height];
   png_byte *row_pointer = const_cast<png_byte *>(data);
-  png_uint_32 bytes_per_row = width * 4;
+  png_uint_32 bytes_per_row = width * BYTES_PER_PIXEL;
   
   for (size_t y = 0; y < height; ++y) {
     row_pointers[y] = row_pointer;
@@ -137,9 +138,7 @@ struct EncodeBaton : Baton {
         
         Local<Value> argv[2];
         argv[0] = Local<Value>::New(Null());
-        argv[1] = scope.Close(buffer->handle_);
-        
-        //LocLocal<Value>::New(Null())
+        argv[1] = Local<Object>::New(buffer->handle_);
         
         if (!baton->callback.IsEmpty() && baton->callback->IsFunction()) {
             TRY_CATCH_CALL(baton->context, baton->callback, 2, argv);
@@ -154,11 +153,19 @@ static Handle<Value> Encode(const Arguments& args) {
     HandleScope scope;
 
     REQUIRE_ARGUMENT_BUFFER(0, buffer);
-    REQUIRE_ARGUMENT_FUNCTION(1, callback);
+    REQUIRE_ARGUMENT_INTEGER(1, width);
+    REQUIRE_ARGUMENT_INTEGER(2, height);
+    REQUIRE_ARGUMENT_FUNCTION(3, callback);
 
+    if (width <= 0 || height <= 0 || width*height*BYTES_PER_PIXEL > (int)Buffer::Length(buffer)) {
+        return ThrowException(Exception::TypeError(
+            String::New("Invalid width or height"))
+        );
+    }
+    
     EncodeBaton *baton = new EncodeBaton(callback, buffer);
-    baton->width = 1;
-    baton->height = 1;
+    baton->width = width;
+    baton->height = height;
     baton->context = Persistent<Object>::New(args.This());
     
     uv_queue_work(uv_default_loop(),
@@ -174,4 +181,4 @@ namespace {
   }
 }
 
-NODE_MODULE(node_gifblobber, RegisterModule);
+NODE_MODULE(node_png_encode, RegisterModule);

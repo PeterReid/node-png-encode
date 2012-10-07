@@ -1,9 +1,9 @@
 {
   'targets': [
     {
-      'target_name': 'node_gifblobber',
+      'target_name': 'node_png_encode',
       'sources': [
-        'src/blobber.cc'
+        'src/png_encode.cc'
       ],
       'dependencies': [
         'deps/lpng1513/binding.gyp:libpng',
