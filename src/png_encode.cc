@@ -123,6 +123,10 @@ struct EncodeBaton : Baton {
         pixel_bytes = (png_byte *)Buffer::Data(buffer);
     }
     
+    ~EncodeBaton() {
+        buffer.Dispose();
+    }
+    
     static void Work(uv_work_t *req) {
         EncodeBaton *baton = static_cast<EncodeBaton *>(req->data);
         int write_result = write_png(baton->pixel_bytes, baton->width, baton->height, &baton->png_bytes);
