@@ -7,7 +7,7 @@ using namespace v8;
 using namespace node;
 
 namespace node_png_encode {
-
+  Handle<Value> Encode(const Arguments& args);
 }
 
 #endif

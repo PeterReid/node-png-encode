@@ -5,6 +5,7 @@
 #include "macros.h"
 #include "png_encode.h"
 #include "byte_builder.h"
+#include "baton.h"
 
 using namespace node_png_encode;
 
@@ -96,21 +97,6 @@ int write_png(const png_byte *data, size_t width, size_t height, ByteBuilder *bu
 	return 0;
 }
 
-struct Baton {
-    uv_work_t request;
-    Persistent<Function> callback;
-    Persistent<Object> context;
-    
-    Baton(Handle<Function> cb_) {
-        request.data = this;
-        callback = Persistent<Function>::New(cb_);
-    }
-    virtual ~Baton() {
-        callback.Dispose();
-        context.Dispose();
-    }
-};
-
 struct EncodeBaton : Baton {
     Persistent<Object> buffer;
     ByteBuilder png_bytes;
@@ -153,7 +139,7 @@ struct EncodeBaton : Baton {
     }
 };
 
-static Handle<Value> Encode(const Arguments& args) {
+Handle<Value> node_png_encode::Encode(const Arguments& args) {
     HandleScope scope;
 
     REQUIRE_ARGUMENT_BUFFER(0, buffer);
@@ -177,12 +163,3 @@ static Handle<Value> Encode(const Arguments& args) {
     
     return scope.Close(String::New("back from encode!"));
 }
-
-
-namespace {
-  void RegisterModule(v8::Handle<Object> target) {
-    NODE_SET_METHOD(target, "encode", Encode);
-  }
-}
-
-NODE_MODULE(node_png_encode, RegisterModule);
