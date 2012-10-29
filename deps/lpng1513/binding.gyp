@@ -59,7 +59,11 @@
         './pngwutil.c',
         './pngtrans.c',
         './pngwio.c',
-        './pngwtran.c'
+        './pngwtran.c',
+        './pngread.c',
+        './pngrutil.c',
+        './pngrio.c',
+        './pngrtran.c'
       ],
     },
   ]
