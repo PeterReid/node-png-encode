@@ -72,7 +72,7 @@ Handle<Value> node_png_encode::BlitTransparently(const Arguments& args) {
     if (destY<0) {
       copyHeight += destY;
       sourceY -= destY;
-      destX = 0;
+      destY = 0;
     }
     
     // Handle going off the edge
