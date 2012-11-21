@@ -13,7 +13,7 @@ static inline int min(int a, int b) {
   return a < b ? a : b;
 }
 static inline bool between_inex(int low_inclusive, int x, int high_exclusive) {
-  return low_inclusive <= x && x < high_inclusive;
+  return low_inclusive <= x && x < high_exclusive;
 }
 
 Handle<Value> node_png_encode::BlitTransparently(const Arguments& args) {
@@ -126,6 +126,5 @@ Handle<Value> node_png_encode::BlitTransparently(const Arguments& args) {
         }
       }
     }
-    
     return scope.Close(Null());
 }
