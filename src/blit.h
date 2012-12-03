@@ -8,6 +8,8 @@ using namespace node;
 
 namespace node_png_encode {
   Handle<Value> BlitTransparently(const Arguments& args);
+  
+  Handle<Value> Line(const Arguments &args);
 }
 
 #endif

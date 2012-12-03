@@ -16,6 +16,38 @@ static inline bool between_inex(int low_inclusive, int x, int high_exclusive) {
   return low_inclusive <= x && x < high_exclusive;
 }
 
+static uint32_t blend(uint32_t bottom, uint32_t top) {
+    // when destAlpha = 0, *destPixel = *sourcePixel;
+    // when destAlpha=255, *destPixel
+    
+    // it passes through the top layer first. With probability A, the color becomes R, G, B, 1.
+    // THis contributes (sR*sA, sG*sA, sB*sA, sA)
+    
+    // It passes through the bottom layer. With probability (1-sA)*dA, the color becomes dR, dG, dB, 1
+    // THis contributes (x*dR, dG*x, dB*x, x) where x = (1-sA)*dA.
+    
+    #define REDOF(x) ((x) & 0xff)
+    #define GREENOF(x) (((x)>>8) & 0xff)
+    #define BLUEOF(x) (((x)>>16) & 0xff)
+    #define ALPHAOF(x) (((x)>>24) & 0xff)
+    #define RGBA(r,g,b,a) ((a<<24) | (b<<16) | (g<<8) | (r))
+    
+    // Otherwise, it is transparent. Probability 1 - sA - (1-sA)*dA
+    int sR = REDOF(top), sG = GREENOF(top), sB = BLUEOF(top), sA = ALPHAOF(top);
+    if (sA==0) return bottom;
+    
+    int dR = REDOF(bottom), dG = GREENOF(bottom), dB = BLUEOF(bottom), dA = ALPHAOF(bottom);
+    
+    int dAAdjusted = ((255-sA)*dA)>>8;
+    
+    int outA = sA + dAAdjusted;
+    int outR = (sR*sA + dR*dAAdjusted) / outA;
+    int outG = (sG*sA + dG*dAAdjusted) / outA;
+    int outB = (sB*sA + dB*dAAdjusted) / outA;
+    
+    return RGBA(outR, outG, outB, outA);
+}
+
 Handle<Value> node_png_encode::BlitTransparently(const Arguments& args) {
     HandleScope scope;
 
@@ -92,39 +124,31 @@ Handle<Value> node_png_encode::BlitTransparently(const Arguments& args) {
         uint32_t *destPixel = destRow;
         uint32_t *sourcePixel = sourceRow;
         for (int col = 0; col < copyWidth; col++, destPixel++, sourcePixel++) {
-        
-          // when destAlpha = 0, *destPixel = *sourcePixel;
-          // when destAlpha=255, *destPixel
-          
-          // it passes through the top layer first. With probability A, the color becomes R, G, B, 1.
-          // THis contributes (sR*sA, sG*sA, sB*sA, sA)
-          
-          // It passes through the bottom layer. With probability (1-sA)*dA, the color becomes dR, dG, dB, 1
-          // THis contributes (x*dR, dG*x, dB*x, x) where x = (1-sA)*dA.
-          
-          #define REDOF(x) ((x) & 0xff)
-          #define GREENOF(x) (((x)>>8) & 0xff)
-          #define BLUEOF(x) (((x)>>16) & 0xff)
-          #define ALPHAOF(x) (((x)>>24) & 0xff)
-          #define RGBA(r,g,b,a) ((a<<24) | (b<<16) | (g<<8) | (r))
-          
-          // Otherwise, it is transparent. Probability 1 - sA - (1-sA)*dA
-          int sR = REDOF(*sourcePixel), sG = GREENOF(*sourcePixel), sB = BLUEOF(*sourcePixel), sA = ALPHAOF(*sourcePixel);
-          if (sA==0) continue;
-          
-          int dR = REDOF(*destPixel), dG = GREENOF(*destPixel), dB = BLUEOF(*destPixel), dA = ALPHAOF(*destPixel);
-          
-          int dAAdjusted = ((255-sA)*dA)>>8;
-          
-          int outA = sA + dAAdjusted;
-          int outR = (sR*sA + dR*dAAdjusted) / outA;
-          int outG = (sG*sA + dG*dAAdjusted) / outA;
-          int outB = (sB*sA + dB*dAAdjusted) / outA;
-          
-          *destPixel = RGBA(outR, outG, outB, outA);
-          
+          *destPixel = blend(*destPixel, *sourcePixel);
         }
       }
     }
+    return scope.Close(Null());
+}
+
+
+Handle<Value> node_png_encode::Line(const Arguments& args) {
+    HandleScope scope;
+
+    REQUIRE_ARGUMENT_BUFFER(0, destBuffer);
+    REQUIRE_ARGUMENT_INTEGER(1, destBufferWidth);
+    REQUIRE_ARGUMENT_INTEGER(2, destBufferHeight);
+    if (destBufferWidth <= 0 || destBufferHeight <= 0 || destBufferWidth*destBufferHeight*BYTES_PER_PIXEL > (int)Buffer::Length(destBuffer)) {
+        return ThrowException(Exception::TypeError(
+            String::New("Invalid destination width or height"))
+        );
+    }
+    REQUIRE_ARGUMENT_INTEGER(3, x0);
+    REQUIRE_ARGUMENT_INTEGER(4, y0);
+    REQUIRE_ARGUMENT_INTEGER(5, x1);
+    REQUIRE_ARGUMENT_INTEGER(6, y1);
+    
+    
+    
     return scope.Close(Null());
 }
