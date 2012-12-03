@@ -10,6 +10,8 @@ namespace node_png_encode {
   Handle<Value> BlitTransparently(const Arguments& args);
   
   Handle<Value> Line(const Arguments &args);
+  
+  Handle<Value> Recolor(const Arguments &args);
 }
 
 #endif

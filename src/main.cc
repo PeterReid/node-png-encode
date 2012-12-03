@@ -8,6 +8,7 @@ namespace {
     NODE_SET_METHOD(target, "decode", node_png_encode::Decode);
     NODE_SET_METHOD(target, "blitTransparently", node_png_encode::BlitTransparently);
     NODE_SET_METHOD(target, "line", node_png_encode::Line);
+    NODE_SET_METHOD(target, "recolor", node_png_encode::Recolor);
   }
 }
 
