@@ -148,7 +148,20 @@ int colorClamp(int x) {
   return x;
 }
 
-//http://www.codeproject.com/Articles/13360/Antialiasing-Wu-Algorithm
+double ipart(double x) {
+  return floor(x);
+}
+double round(double x) {
+  return ipart(x + 0.5);
+}
+double fpart(double x) {
+  return x - ipart(x);
+}
+double rfpart(double x) {
+  return 1 - fpart(x);
+}
+
+//http://en.wikipedia.org/wiki/Xiaolin_Wu%27s_line_algorithm
 Handle<Value> node_png_encode::Line(const Arguments& args) {
     HandleScope scope;
 
@@ -162,126 +175,84 @@ Handle<Value> node_png_encode::Line(const Arguments& args) {
     }
     uint32_t *destPixels = reinterpret_cast<uint32_t *>(Buffer::Data(destBuffer));
 
-    REQUIRE_ARGUMENT_INTEGER(3, X0);
-    REQUIRE_ARGUMENT_INTEGER(4, Y0);
-    REQUIRE_ARGUMENT_INTEGER(5, X1);
-    REQUIRE_ARGUMENT_INTEGER(6, Y1);
+    REQUIRE_ARGUMENT_DOUBLE(3, x0);
+    REQUIRE_ARGUMENT_DOUBLE(4, y0);
+    REQUIRE_ARGUMENT_DOUBLE(5, x1);
+    REQUIRE_ARGUMENT_DOUBLE(6, y1);
 
     REQUIRE_ARGUMENT_INTEGER(7, red);
     REQUIRE_ARGUMENT_INTEGER(8, green);
     REQUIRE_ARGUMENT_INTEGER(9, blue);
 
-    const short NumLevels = 256;
-    const short IntensityBits = 8;
-
-    unsigned short IntensityShift, ErrorAdj, ErrorAcc;
-    unsigned short ErrorAccTemp, Weighting, WeightingComplementMask;
-    short DeltaX, DeltaY, Temp, XDir;
     int BaseColor = RGBA(colorClamp(red), colorClamp(green), colorClamp(blue), 0);
-    const int fullAlpha = 0xff000000;
-    /* Make sure the line runs top to bottom */
-    if (Y0 > Y1) {
-        Temp = Y0; Y0 = Y1; Y1 = Temp;
-        Temp = X0; X0 = X1; X1 = Temp;
-    }
-   /* Draw the initial pixel, which is always exactly intersected by
-      the line and so needs no weighting */
-   plot(destPixels, destBufferWidth, destBufferHeight,X0, Y0, BaseColor|fullAlpha);
 
-   if ((DeltaX = X1 - X0) >= 0) {
-      XDir = 1;
-   } else {
-      XDir = -1;
-      DeltaX = -DeltaX; /* make DeltaX positive */
-   }
-   /* Special-case horizontal, vertical, and diagonal lines, which
-      require no weighting because they go right through the center of
-      every pixel */
-   if ((DeltaY = Y1 - Y0) == 0) {
-      /* Horizontal line */
-      while (DeltaX-- != 0) {
-         X0 += XDir;
-         plot(destPixels, destBufferWidth, destBufferHeight,X0, Y0, BaseColor|fullAlpha);
+    bool steep = abs(y1 - y0) > abs(x1 - x0);
+
+    if (steep) {
+        std::swap(x0, y0);
+        std::swap(x1, y1);
+    }
+    if (x0 > x1) {
+      std::swap(x0, x1);
+      std::swap(y0, y1);
+    }
+
+    double dx = x1 - x0;
+    double dy = y1 - y0;
+    double gradient = dy / dx;
+
+    // handle first endpoint
+    double xend = round(x0);
+    double yend = y0 + gradient * (xend - x0);
+    double xgap = rfpart(x0 + 0.5);
+    int xpxl1 = (int)xend; // this will be used in the main loop
+    int ypxl1 = (int)ipart(yend);
+    {
+        uint32_t color = ((int)(255*(fpart(yend)*xgap))<<24)  | BaseColor;
+        uint32_t colorPrime = ((int)(255*(rfpart(yend)*xgap))<<24) | BaseColor;
+        if (steep) {
+            plot(destPixels, destBufferWidth, destBufferHeight, ypxl1,   xpxl1,colorPrime);// rfpart(yend) * xgap);
+            plot(destPixels, destBufferWidth, destBufferHeight, ypxl1+1, xpxl1, color);// fpart(yend) * xgap);
+        } else {
+            plot(destPixels, destBufferWidth, destBufferHeight, xpxl1, ypxl1  , colorPrime);//rfpart(yend) * xgap);
+            plot(destPixels, destBufferWidth, destBufferHeight, xpxl1, ypxl1+1,  color);//fpart(yend) * xgap);
+        }
+    }
+    double intery = yend + gradient; //first y-intersection for the main loop
+
+    //handle second endpoint
+    xend = round(x1);
+    yend = y1 + gradient * (xend - x1);
+    xgap = fpart(x1 + 0.5);
+    int xpxl2 = (int)xend;  //this will be used in the main loop
+    int ypxl2 = (int)ipart(yend);
+    {
+        uint32_t color = ((int)(255*(fpart(yend)*xgap))<<24)  | BaseColor;
+        uint32_t colorPrime = ((int)(255*(rfpart(yend)*xgap))<<24) | BaseColor;
+      if (steep) {
+          plot(destPixels, destBufferWidth, destBufferHeight, ypxl2  , xpxl2, colorPrime);//rfpart(yend) * xgap);
+          plot(destPixels, destBufferWidth, destBufferHeight, ypxl2+1, xpxl2, color);// fpart(yend) * xgap);
+      } else {
+          plot(destPixels, destBufferWidth, destBufferHeight, xpxl2, ypxl2,  colorPrime);//rfpart(yend) * xgap);
+          plot(destPixels, destBufferWidth, destBufferHeight, xpxl2, ypxl2+1, color);//fpart(yend) * xgap);
       }
-      return scope.Close(Null());
-   }
-   if (DeltaX == 0) {
-      /* Vertical line */
-      do {
-         Y0++;
-         plot(destPixels, destBufferWidth, destBufferHeight,X0, Y0, BaseColor|fullAlpha);
-      } while (--DeltaY != 0);
-      return scope.Close(Null());
-   }
-   if (DeltaX == DeltaY) {
-      /* Diagonal line */
-      do {
-         X0 += XDir;
-         Y0++;
-         plot(destPixels, destBufferWidth, destBufferHeight,X0, Y0, BaseColor|fullAlpha);
-      } while (--DeltaY != 0);
-      return scope.Close(Null());
-   }
-   /* Line is not horizontal, diagonal, or vertical */
-   ErrorAcc = 0;  /* initialize the line error accumulator to 0 */
-   /* # of bits by which to shift ErrorAcc to get intensity level */
-   IntensityShift = 16 - IntensityBits;
-   /* Mask used to flip all bits in an intensity weighting, producing the
-      result (1 - intensity weighting) */
-   WeightingComplementMask = NumLevels - 1;
-   /* Is this an X-major or Y-major line? */
-   if (DeltaY > DeltaX) {
-      /* Y-major line; calculate 16-bit fixed-point fractional part of a
-         pixel that X advances each time Y advances 1 pixel, truncating the
-         result so that we won't overrun the endpoint along the X axis */
-      ErrorAdj = ((unsigned long) DeltaX << 16) / (unsigned long) DeltaY;
-      /* Draw all pixels other than the first and last */
-      while (--DeltaY) {
-         ErrorAccTemp = ErrorAcc;   /* remember currrent accumulated error */
-         ErrorAcc += ErrorAdj;      /* calculate error for next pixel */
-         if (ErrorAcc <= ErrorAccTemp) {
-            /* The error accumulator turned over, so advance the X coord */
-            X0 += XDir;
-         }
-         Y0++; /* Y-major, so always advance Y */
-         /* The IntensityBits most significant bits of ErrorAcc give us the
-            intensity weighting for this pixel, and the complement of the
-            weighting for the paired pixel */
-         Weighting = ErrorAcc >> IntensityShift;
-         plot(destPixels, destBufferWidth, destBufferHeight,X0, Y0, BaseColor | ((Weighting ^ WeightingComplementMask) << 24));
-         plot(destPixels, destBufferWidth, destBufferHeight,X0 + XDir, Y0,
-               BaseColor | (Weighting<<24));
-      }
-      /* Draw the final pixel, which is
-         always exactly intersected by the line
-         and so needs no weighting */
-      plot(destPixels, destBufferWidth, destBufferHeight,X1, Y1, BaseColor);
-      return scope.Close(Null());
-   }
-   /* It's an X-major line; calculate 16-bit fixed-point fractional part of a
-      pixel that Y advances each time X advances 1 pixel, truncating the
-      result to avoid overrunning the endpoint along the X axis */
-   ErrorAdj = ((unsigned long) DeltaY << 16) / (unsigned long) DeltaX;
-   /* Draw all pixels other than the first and last */
-   while (--DeltaX) {
-      ErrorAccTemp = ErrorAcc;   /* remember currrent accumulated error */
-      ErrorAcc += ErrorAdj;      /* calculate error for next pixel */
-      if (ErrorAcc <= ErrorAccTemp) {
-         /* The error accumulator turned over, so advance the Y coord */
-         Y0++;
-      }
-      X0 += XDir; /* X-major, so always advance X */
-      /* The IntensityBits most significant bits of ErrorAcc give us the
-         intensity weighting for this pixel, and the complement of the
-         weighting for the paired pixel */
-      Weighting = ErrorAcc >> IntensityShift;
-      plot(destPixels, destBufferWidth, destBufferHeight,X0, Y0, BaseColor | ((Weighting ^ WeightingComplementMask) << 24));
-      plot(destPixels, destBufferWidth, destBufferHeight,X0, Y0 + 1,
-            BaseColor | (Weighting<<24));
-   }
-   /* Draw the final pixel, which is always exactly intersected by the line
-      and so needs no weighting */
-   plot(destPixels, destBufferWidth, destBufferHeight,X1, Y1, BaseColor|fullAlpha);
+    }
+
+    // main loop
+    for (int x = xpxl1 + 1; x <= xpxl2 - 1; x++) {
+        int alpha = (int)(255*fpart(intery));
+        uint32_t color = (alpha<<24) | BaseColor;
+        uint32_t colorPrime = ((255-alpha)<<24) | BaseColor;
+
+        if (steep) {
+            plot(destPixels, destBufferWidth, destBufferHeight, (int)ipart(intery)  , x, colorPrime);//rfpart(intery));
+            plot(destPixels, destBufferWidth, destBufferHeight, (int)ipart(intery)+1, x,  color);//fpart(intery));
+        } else {
+            plot(destPixels, destBufferWidth, destBufferHeight, x, (int)ipart (intery), colorPrime);// rfpart(intery));
+            plot(destPixels, destBufferWidth, destBufferHeight, x, (int)ipart (intery)+1,color);// fpart(intery));
+        }
+        intery = intery + gradient;
+    }
 
    return scope.Close(Null());
 }
