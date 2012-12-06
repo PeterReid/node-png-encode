@@ -64,23 +64,17 @@ struct DecodeBaton : Baton {
 
     static void Work(uv_work_t *req) {
         DecodeBaton *baton = static_cast<DecodeBaton *>(req->data);
-        printf("Decode is working!\n");
-        //int write_result = write_png(baton->pixel_bytes, baton->width, baton->height, &baton->png_bytes);
-        //printf("write_result = %d\n", write_result);
 
         png_structp png_ptr = png_create_read_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
         if (!png_ptr)
           return;
         will_destroy_read_struct read_destroyer(png_ptr);
 
-        printf("Allocated\n");
-
         png_infop info_ptr = png_create_info_struct(png_ptr);
         if (!info_ptr) {
             return;
         }
         will_destroy_info_struct info_destroyer(png_ptr, info_ptr);
-        printf("Made info!\n");
 
         png_set_read_fn(png_ptr, baton, read_memory_fn);
         //png_init_io(png_ptr, infile);
@@ -96,7 +90,6 @@ struct DecodeBaton : Baton {
 
         switch(color_type) {
           case PNG_COLOR_TYPE_RGB_ALPHA: {
-            printf("It is RGBA!\n");
 
             const png_uint_32 bytesPerRow = png_get_rowbytes(png_ptr, info_ptr);
             if (bytesPerRow != 4*baton->width) {
@@ -127,8 +120,6 @@ struct DecodeBaton : Baton {
         HandleScope scope;
         DecodeBaton *baton = static_cast<DecodeBaton *>(req->data);
 
-        printf("After!\n");
-
         size_t pixel_byte_count = baton->width * baton->height * 4;
         Buffer *buffer = Buffer::New(pixel_byte_count);
         memcpy(Buffer::Data(buffer), baton->pixel_bytes, pixel_byte_count);
@@ -141,7 +132,6 @@ struct DecodeBaton : Baton {
 
         if (!baton->callback.IsEmpty() && baton->callback->IsFunction()) {
             TRY_CATCH_CALL(baton->context, baton->callback, 4, argv);
-            printf("After teh try-catch\n");
         }
 
         delete baton;
