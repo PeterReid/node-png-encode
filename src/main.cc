@@ -1,5 +1,6 @@
 #include "png_encode.h"
 #include "png_decode.h"
+#include "png_decode_progressive.h"
 #include "blit.h"
 
 namespace {
@@ -9,6 +10,7 @@ namespace {
     NODE_SET_METHOD(target, "blitTransparently", node_png_encode::BlitTransparently);
     NODE_SET_METHOD(target, "line", node_png_encode::Line);
     NODE_SET_METHOD(target, "recolor", node_png_encode::Recolor);
+    node_png_encode::PngDecoder::Init(target);
   }
 }
 

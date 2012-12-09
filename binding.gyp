@@ -5,6 +5,7 @@
       'sources': [
         'src/png_encode.cc',
         'src/png_decode.cc',
+        'src/png_decode_progressive.cc',
         'src/blit.cc',
         'src/main.cc'
       ],
