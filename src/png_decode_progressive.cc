@@ -13,23 +13,23 @@ namespace node_png_encode {
 
 PngDecoder::PngDecoder(Handle<Function> completionCallback_) {
   completionCallback = Persistent<Function>::New(completionCallback_);
-  uv_mutex_init(&buffers_lock);
+  uv_mutex_init(&chunks_lock);
 };
 
 PngDecoder::~PngDecoder() {
 
   // Make sure we drop all the references to buffers
-  uv_mutex_lock(&buffers_lock);
-  while (!buffers.empty()) {
-    Persistent<Object> buffer = buffers.front();
-    buffer.Dispose();
-    buffers.pop();
+  uv_mutex_lock(&chunks_lock);
+  while (!chunks.empty()) {
+    DataChunk chunk = chunks.front();
+    chunk.buffer.Dispose();
+    chunks.pop();
   }
-  uv_mutex_unlock(&buffers_lock);
+  uv_mutex_unlock(&chunks_lock);
 
   completionCallback.Dispose();
 
-  uv_mutex_destroy(&buffers_lock);
+  uv_mutex_destroy(&chunks_lock);
 };
 
 void PngDecoder::Init(Handle<Object> target) {
@@ -68,9 +68,14 @@ Handle<Value> PngDecoder::Data(const Arguments& args) {
   
   REQUIRE_ARGUMENT_BUFFER(0, buffer);
 
-  uv_mutex_lock(&obj->buffers_lock);
-  obj->buffers.push(Persistent<Object>::New(buffer));
-  uv_mutex_unlock(&obj->buffers_lock);
+  DataChunk chunk = {
+    Persistent<Object>::New(buffer),
+    (png_bytep)Buffer::Data(buffer),
+    (png_uint_32)Buffer::Length(buffer)
+  };
+  uv_mutex_lock(&obj->chunks_lock);
+  obj->chunks.push(chunk);
+  uv_mutex_unlock(&obj->chunks_lock);
 
   return scope.Close(Undefined());//Number::New(obj->counter_));
 }
@@ -86,7 +91,7 @@ Handle<Value> PngDecoder::Error(const Arguments& args) {
 Handle<Value> PngDecoder::End(const Arguments& args) {
   HandleScope scope;
 
-  // TODO: No more data expected. If we are all done with the buffers we have been
+  // TODO: No more data expected. If we are all done with the chunks we have been
   // given and aren't expecting any more (because End was called), we should 
   // callback with an error (unexpected end of stream).
 

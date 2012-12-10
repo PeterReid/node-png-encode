@@ -3,6 +3,7 @@
 
 #include <node.h>
 #include <queue>
+#include "png.h"
 
 using namespace v8;
 using namespace node;
@@ -28,8 +29,16 @@ namespace node_png_encode {
      * walking on each other. I am not sure if a spinlock would make more sense; this will
      * only be help instantaneously, enough to push/pop the queue.
      */
-    uv_mutex_t buffers_lock;
-    std::queue<Persistent<Object>> buffers;
+    uv_mutex_t chunks_lock;
+
+    struct DataChunk {
+      Persistent<Object> buffer;
+      // Extracted from the buffer, but I don't think I'm supposed to call Buffer::Data, Buffer::Length
+      // from other threads.
+      png_bytep bytes;
+      png_uint_32 length;
+    };
+    std::queue<DataChunk> chunks;
   };
 
   /* Takes: a callback(err, width, height, buffer) for when it is done decoding
