@@ -18,7 +18,9 @@ namespace node_png_encode {
     Persistent<Function> completionCallback;
 
     static v8::Handle<v8::Value> New(const v8::Arguments& args);
-    static v8::Handle<v8::Value> FeedBuffer(const v8::Arguments& args);
+    static v8::Handle<v8::Value> Data(const v8::Arguments& args);
+    static v8::Handle<v8::Value> Error(const v8::Arguments& args);
+    static v8::Handle<v8::Value> End(const v8::Arguments& args);
     double counter_;
   };
 

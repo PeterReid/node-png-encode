@@ -21,6 +21,6 @@ var interval = setInterval(function() {
   if (chunkIdx == chunks.length) return clearInterval(interval);
   
   console.log('feeding chunk', chunkIdx);
-  console.log(decoder.feedBuffer(chunks[chunkIdx]));
+  console.log(decoder.data(chunks[chunkIdx]));
   chunkIdx++;
 }, 1000);
