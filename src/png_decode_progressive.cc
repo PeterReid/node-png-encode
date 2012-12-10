@@ -13,10 +13,23 @@ namespace node_png_encode {
 
 PngDecoder::PngDecoder(Handle<Function> completionCallback_) {
   completionCallback = Persistent<Function>::New(completionCallback_);
+  uv_mutex_init(&buffers_lock);
 };
 
 PngDecoder::~PngDecoder() {
+
+  // Make sure we drop all the references to buffers
+  uv_mutex_lock(&buffers_lock);
+  while (!buffers.empty()) {
+    Persistent<Object> buffer = buffers.front();
+    buffer.Dispose();
+    buffers.pop();
+  }
+  uv_mutex_unlock(&buffers_lock);
+
   completionCallback.Dispose();
+
+  uv_mutex_destroy(&buffers_lock);
 };
 
 void PngDecoder::Init(Handle<Object> target) {
@@ -54,6 +67,10 @@ Handle<Value> PngDecoder::Data(const Arguments& args) {
   PngDecoder* obj = ObjectWrap::Unwrap<PngDecoder>(args.This());
   
   REQUIRE_ARGUMENT_BUFFER(0, buffer);
+
+  uv_mutex_lock(&obj->buffers_lock);
+  obj->buffers.push(Persistent<Object>::New(buffer));
+  uv_mutex_unlock(&obj->buffers_lock);
 
   return scope.Close(Undefined());//Number::New(obj->counter_));
 }
