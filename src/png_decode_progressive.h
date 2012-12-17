@@ -13,10 +13,12 @@ namespace node_png_encode {
    public:
     static void Init(v8::Handle<v8::Object> target);
 
+
    private:
     PngDecoder(Handle<Function> completionCallback_);
     ~PngDecoder();
 
+    uv_work_t request;
     Persistent<Function> completionCallback;
 
     static v8::Handle<v8::Value> New(const v8::Arguments& args);
@@ -24,6 +26,11 @@ namespace node_png_encode {
     static v8::Handle<v8::Value> Error(const v8::Arguments& args);
     static v8::Handle<v8::Value> End(const v8::Arguments& args);
     double counter_;
+
+    static void DecodeChunksEntry(uv_work_t *req);
+    void DecodeChunks();
+    static void AfterDecodeChunksEntry(uv_work_t *req);
+    void AfterDecodeChunks();
 
     /* Data() and the worker thread both need to touch 'buffers'. This lock keeps them from
      * walking on each other. I am not sure if a spinlock would make more sense; this will
@@ -39,6 +46,8 @@ namespace node_png_encode {
       png_uint_32 length;
     };
     std::queue<DataChunk> chunks;
+    bool workerGoing;
+    
   };
 
   /* Takes: a callback(err, width, height, buffer) for when it is done decoding

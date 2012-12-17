@@ -14,6 +14,9 @@ namespace node_png_encode {
 PngDecoder::PngDecoder(Handle<Function> completionCallback_) {
   completionCallback = Persistent<Function>::New(completionCallback_);
   uv_mutex_init(&chunks_lock);
+
+  request.data = this;
+  workerGoing = false;
 };
 
 PngDecoder::~PngDecoder() {
@@ -75,6 +78,11 @@ Handle<Value> PngDecoder::Data(const Arguments& args) {
   };
   uv_mutex_lock(&obj->chunks_lock);
   obj->chunks.push(chunk);
+
+  if (!obj->workerGoing) {
+    // We need to have exactly one worker either decoding chunks or enqueued to be doing that.
+    uv_queue_work(uv_default_loop(), &obj->request, DecodeChunksEntry, AfterDecodeChunksEntry);
+  }
   uv_mutex_unlock(&obj->chunks_lock);
 
   return scope.Close(Undefined());//Number::New(obj->counter_));
@@ -98,4 +106,25 @@ Handle<Value> PngDecoder::End(const Arguments& args) {
   return scope.Close(Undefined());//Number::New(obj->counter_));
 }
 
+void PngDecoder::DecodeChunksEntry(uv_work_t *req)
+{
+  PngDecoder *baton = static_cast<PngDecoder *>(req->data);
+  baton->DecodeChunks();
+}
+
+void PngDecoder::DecodeChunks()
+{
+
+}
+
+void PngDecoder::AfterDecodeChunksEntry(uv_work_t *req)
+{
+  PngDecoder *baton = static_cast<PngDecoder *>(req->data);
+  baton->AfterDecodeChunks();
+}
+
+void PngDecoder::AfterDecodeChunks()
+{
+  // If there are more chunks to decode, schedule those now.
+}
 }
