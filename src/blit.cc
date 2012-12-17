@@ -161,6 +161,16 @@ double rfpart(double x) {
   return 1 - fpart(x);
 }
 
+typedef int32_t fixed_t;
+
+static fixed_t toFixed(double x) {
+  return (fixed_t)(x*0x00010000 + .5);
+}
+static int ipartOfFixed(fixed_t x) {
+  return x >> 16;
+}
+
+
 //http://en.wikipedia.org/wiki/Xiaolin_Wu%27s_line_algorithm
 Handle<Value> node_png_encode::Line(const Arguments& args) {
     HandleScope scope;
@@ -238,20 +248,23 @@ Handle<Value> node_png_encode::Line(const Arguments& args) {
       }
     }
 
+    fixed_t fpIntery = toFixed(intery);
+    fixed_t fpGradient = toFixed(gradient);
     // main loop
     for (int x = xpxl1 + 1; x <= xpxl2 - 1; x++) {
-        int alpha = (int)(255*fpart(intery));
-        uint32_t color = (alpha<<24) | BaseColor;
-        uint32_t colorPrime = ((255-alpha)<<24) | BaseColor;
+        int alpha = (fpIntery&0xff00)<<16;
+        uint32_t color = alpha | BaseColor;
+        uint32_t colorPrime = (0xff000000-alpha) | BaseColor;
 
         if (steep) {
-            plot(destPixels, destBufferWidth, destBufferHeight, (int)ipart(intery)  , x, colorPrime);//rfpart(intery));
-            plot(destPixels, destBufferWidth, destBufferHeight, (int)ipart(intery)+1, x,  color);//fpart(intery));
+            plot(destPixels, destBufferWidth, destBufferHeight, ipartOfFixed(fpIntery)  , x, colorPrime);//rfpart(intery));
+            plot(destPixels, destBufferWidth, destBufferHeight, ipartOfFixed(fpIntery)+1, x,  color);//fpart(intery));
         } else {
-            plot(destPixels, destBufferWidth, destBufferHeight, x, (int)ipart (intery), colorPrime);// rfpart(intery));
-            plot(destPixels, destBufferWidth, destBufferHeight, x, (int)ipart (intery)+1,color);// fpart(intery));
+            plot(destPixels, destBufferWidth, destBufferHeight, x, ipartOfFixed (fpIntery), colorPrime);// rfpart(intery));
+            plot(destPixels, destBufferWidth, destBufferHeight, x, ipartOfFixed (fpIntery)+1,color);// fpart(intery));
         }
-        intery = intery + gradient;
+
+        fpIntery += fpGradient;
     }
 
    return scope.Close(Null());
