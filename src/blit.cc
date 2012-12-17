@@ -209,6 +209,7 @@ Handle<Value> node_png_encode::Line(const Arguments& args) {
 
     double dx = x1 - x0;
     double dy = y1 - y0;
+    if (dx==0) return scope.Close(Undefined());
     double gradient = dy / dx;
 
     // handle first endpoint
@@ -250,18 +251,29 @@ Handle<Value> node_png_encode::Line(const Arguments& args) {
 
     fixed_t fpIntery = toFixed(intery);
     fixed_t fpGradient = toFixed(gradient);
+
+    // Clamp line to left and right edges. I am waiting until we are in int-space to do this
+    // so that the result ends up *exactly* the same as if this optimization were not here; no
+    // tricky rounding errors. This is useful for testing its correctness.
+    if (xpxl2 >= destBufferWidth) xpxl2 = destBufferWidth;
+    if (xpxl1 < -1) {
+      fpIntery += fpGradient * (-1 - xpxl1);
+      xpxl1 = -1;
+    }
+
     // main loop
-    for (int x = xpxl1 + 1; x <= xpxl2 - 1; x++) {
-        int alpha = (fpIntery&0xff00)<<16;
+    for (int x = xpxl1 + 1; x < xpxl2; x++) {
+        int alpha = (fpIntery&0xff00)<<16; // Extracting the MSB of the fractional part, shifting to alpha slot
         uint32_t color = alpha | BaseColor;
         uint32_t colorPrime = (0xff000000-alpha) | BaseColor;
 
+        int drawY = ipartOfFixed(fpIntery);
         if (steep) {
-            plot(destPixels, destBufferWidth, destBufferHeight, ipartOfFixed(fpIntery)  , x, colorPrime);//rfpart(intery));
-            plot(destPixels, destBufferWidth, destBufferHeight, ipartOfFixed(fpIntery)+1, x,  color);//fpart(intery));
+            plot(destPixels, destBufferWidth, destBufferHeight, drawY, x, colorPrime);
+            plot(destPixels, destBufferWidth, destBufferHeight, drawY+1, x,  color);
         } else {
-            plot(destPixels, destBufferWidth, destBufferHeight, x, ipartOfFixed (fpIntery), colorPrime);// rfpart(intery));
-            plot(destPixels, destBufferWidth, destBufferHeight, x, ipartOfFixed (fpIntery)+1,color);// fpart(intery));
+            plot(destPixels, destBufferWidth, destBufferHeight, x, drawY, colorPrime);
+            plot(destPixels, destBufferWidth, destBufferHeight, x, drawY+1,color);
         }
 
         fpIntery += fpGradient;
