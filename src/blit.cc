@@ -134,12 +134,9 @@ Handle<Value> node_png_encode::BlitTransparently(const Arguments& args) {
 }
 
 void plot(uint32_t *pixels, int w, int h, int x, int y, uint32_t color) {
-    //plot the pixel at (x, y) with brightness c (where 0 = c = 1)
     if (x<0 || y<0 || x>=w || y>=h) return;
 
-    int alpha = ALPHAOF(color);
-    pixels[w*y + x] = //RGBA(alpha,alpha,alpha,255);//
-      blend(pixels[w*y + x], color);
+    pixels[w*y + x] = blend(pixels[w*y + x], color);
 }
 
 int colorClamp(int x) {
