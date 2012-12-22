@@ -302,3 +302,20 @@ Handle<Value> node_png_encode::Recolor(const Arguments& args) {
 
   return scope.Close(Null());
 }
+
+Handle<Value> node_png_encode::Batch(const Arguments& args) {
+  HandleScope scope;
+
+  if (args.Length() < 2) {
+    return ThrowException(Exception::TypeError(
+            String::New("BatchOperations requires operation list and callback")));
+  }
+  Local<Object> ops = Local<Object>::Cast(args[0]);
+  Local<Value> op1 = ops->Get(0);
+  //int x = ops->GetLength();
+  //
+  //printf("Ops length: %d\n", x);
+  printf("did it\n");
+
+  return scope.Close(Null());
+}
