@@ -34,20 +34,20 @@ static uint32_t blend(uint32_t bottom, uint32_t top) {
     #define RGBA(r,g,b,a) ((a<<24) | (b<<16) | (g<<8) | (r))
 
     // Otherwise, it is transparent. Probability 1 - sA - (1-sA)*dA
-    int sR = REDOF(top), sG = GREENOF(top), sB = BLUEOF(top), sA = ALPHAOF(top);
+    int sG = GREENOF(top), sA = ALPHAOF(top);
     if (sA==0) return bottom;
     if (sA==255) return top;
 
-    int dR = REDOF(bottom), dG = GREENOF(bottom), dB = BLUEOF(bottom), dA = ALPHAOF(bottom);
+    int dG = GREENOF(bottom), dA = ALPHAOF(bottom);
 
     int dAAdjusted = ((255-sA)*dA)>>8;
 
     int outA = sA + dAAdjusted;
-    int outR = (sR*sA + dR*dAAdjusted) / outA;
     int outG = (sG*sA + dG*dAAdjusted) / outA;
-    int outB = (sB*sA + dB*dAAdjusted) / outA;
+    // These can be combined since the overflow goes into an empty byte
+    int outRB = ((top&0x00ff00ff)*sA + ((bottom&0x00ff00ff)*dAAdjusted)) / outA;
 
-    return RGBA(outR, outG, outB, outA);
+    return RGBA(0, outG, 0, outA) | outRB;
 }
 
 Handle<Value> node_png_encode::BlitTransparently(const Arguments& args) {
