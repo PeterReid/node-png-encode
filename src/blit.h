@@ -12,6 +12,8 @@ namespace node_png_encode {
   Handle<Value> Line(const Arguments &args);
   
   Handle<Value> Recolor(const Arguments &args);
+
+  Handle<Value> Batch(const Arguments &args);
 }
 
 #endif
