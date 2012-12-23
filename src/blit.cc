@@ -279,11 +279,9 @@ Handle<Value> node_png_encode::Line(const Arguments& args) {
 	fixed_t dx = fpx1 - fpx0;
 	fixed_t dy = fpy1 - fpy0;
 
-	if (dx==0) return scope.Close(Undefined());
+	fixed_t gradient = dx==0 ? 0 : fixedDivide(dy, dx);
 
-	fixed_t gradient = fixedDivide(dy, dx);
-
-	fixed_t xend = fixedRound(fpx0);
+	fixed_t xend = fixedFloor(fpx0);
 	fixed_t yend = fpy0 + fixedMultiply(gradient, xend - fpx0);
 
 	fixed_t xgap = frfpart(fpx0);// + FP_HALF);
@@ -291,7 +289,7 @@ Handle<Value> node_png_encode::Line(const Arguments& args) {
 	int xpxl1 = ipartOfFixed(xend);
 	int ypxl1 = ipartOfFixed(yend);
 	{
-		printf("yend = %08x, xgap = %08x\n", yend, xgap);
+		
 		uint32_t color = ((ffpart(yend)*xgap) & 0xff000000) | BaseColor;
 		// We rely on having at least one factor in the product below less than one
 		// and the other less than or equal to one. Otherwise, we end up with a 
@@ -308,13 +306,14 @@ Handle<Value> node_png_encode::Line(const Arguments& args) {
     }
     fixed_t intery = yend + gradient; //first y-intersection for the main loop
     //handle second endpoint
-    xend = fixedRound(fpx1);
+    xend = fixedFloor(fpx1 + 0x10000);
     yend = fpy1 + fixedMultiply(gradient, xend - fpx1);
-    xgap = frfpart(fpx1);// + FP_HALF);
+    xgap = ffpart(fpx1);// + FP_HALF);
     int xpxl2 = ipartOfFixed(xend);  //this will be used in the main loop
     int ypxl2 = ipartOfFixed(yend);
     {
- 		uint32_t color = ((ffpart(yend)*xgap) & 0xff000000) | BaseColor;
+ 		printf("yend = %08x, xgap = %08x\n", yend, xgap);
+		uint32_t color = ((ffpart(yend)*xgap) & 0xff000000) | BaseColor;
         uint32_t colorPrime = ((frfpartBelowOne(yend)*xgap) & 0xff000000) | BaseColor;
 
 		if (steep) {
@@ -363,6 +362,7 @@ Handle<Value> node_png_encode::Line(const Arguments& args) {
 	}
 */
     // main loop
+	
     for (int x = xpxl1 + 1; x < xpxl2; x++) {
         int alpha = (intery&0xff00)<<16; // Extracting the MSB of the fractional part, shifting to alpha slot
         uint32_t color = alpha | BaseColor;
