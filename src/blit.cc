@@ -34,20 +34,25 @@ static uint32_t blend(uint32_t bottom, uint32_t top) {
     #define RGBA(r,g,b,a) ((a<<24) | (b<<16) | (g<<8) | (r))
 
     // Otherwise, it is transparent. Probability 1 - sA - (1-sA)*dA
-    int sG = GREENOF(top), sA = ALPHAOF(top);
+    int sG = GREENOF(top), sR = REDOF(top), sB = BLUEOF(top), sA = ALPHAOF(top);
+
     if (sA==0) return bottom;
     if (sA==255) return top;
 
-    int dG = GREENOF(bottom), dA = ALPHAOF(bottom);
+    int dG = GREENOF(bottom), dR = REDOF(bottom), dB = BLUEOF(bottom), dA = ALPHAOF(bottom);
+ 
 
-    int dAAdjusted = ((255-sA)*dA)>>8;
+    int dAAdjusted = ((256-sA)*dA)>>8;
 
     int outA = sA + dAAdjusted;
     int outG = (sG*sA + dG*dAAdjusted) / outA;
-    // These can be combined since the overflow goes into an empty byte
-    int outRB = ((top&0x00ff00ff)*sA + ((bottom&0x00ff00ff)*dAAdjusted)) / outA;
-
-    return RGBA(0, outG, 0, outA) | outRB;
+	
+	int outRBNumerator = ((top&0x00ff00ff)*sA + ((bottom&0x00ff00ff)*dAAdjusted));
+	
+	int outR = ((outRBNumerator&0x0000ffff) / outA);
+	int outB = (((outRBNumerator&0xffff0000) / outA)&0x00ff0000);
+	
+	return RGBA(outR, outG, 0, outA) | outB;
 }
 
 Handle<Value> node_png_encode::BlitTransparently(const Arguments& args) {
@@ -134,13 +139,7 @@ Handle<Value> node_png_encode::BlitTransparently(const Arguments& args) {
 }
 
 void plot(uint32_t *pixels, int w, int h, int x, int y, uint32_t color) {
-  // printf(" x = %d, y = %d, width = %d, height = %d", x, y, w, h);
-	if (x<0 || y<0 || x>=w || y>=h) {
-		printf("Out of bounds with x = %d, y = %d, width = %d, height = %d", x, y, w, h);
-		return;
-	} else {
-		pixels[w*y + x] = blend(pixels[w*y + x], color);
-	}
+ 	pixels[w*y + x] = blend(pixels[w*y + x], color);
 }
 
 void boundedPlot(uint32_t *pixels, int w, int h, int x, int y, uint32_t color) {
@@ -171,6 +170,13 @@ static fixed_t fixedRound(fixed_t x) {
 
 static fixed_t fixedFloor(fixed_t x) {
 	return 0xffff0000&x;
+}
+
+static fixed_t fixedCeil(fixed_t x) {
+	if ((x&0x0000ffff) == 0) {
+		return x;
+	}
+	return (x&0xffff0000)+0x00010000;
 }
 
 static fixed_t fixedMultiply(fixed_t x, fixed_t y) {
@@ -250,27 +256,44 @@ Handle<Value> node_png_encode::Line(const Arguments& args) {
       std::swap(x0, x1);
       std::swap(y0, y1);
     }
-	if (steep) {
-		printf("STEEP");
-	} else {
-		printf("NOT STEEP");
+
+	double dbldx = x1 - x0;
+	double dbldy = y1 - y0;
+	double dblGradient = dbldx==0 ? 0 : dbldy / dbldx;
+
+	
+	
+	int yMax = steep ? destBufferWidth - 1 : destBufferHeight - 1;
+	int xMax = steep ? destBufferHeight - 1 : destBufferWidth - 1;
+
+	if (y0 < -1) {
+		if (dblGradient <= 0) return scope.Close(Null());
+		double dbldy = -1 - y0;
+		double dbldx = dbldy / dblGradient;
+		x0 += dbldx;
+		y0 += dbldx * dblGradient;		
+	} else if (y0 > yMax) {
+		if (dblGradient >= 0) return scope.Close(Null());
+		double dbldy =  yMax - y0;
+		double dbldx = dbldy / dblGradient;
+		x0 += dbldx;
+		y0 += dbldx * dblGradient;
 	}
-
-
-	/*
-    double dx = x1 - x0;
-    double dy = y1 - y0;
-    if (dx==0) return scope.Close(Undefined());
-    double gradient = dy / dx;
-    // handle first endpoint
-    double xend = round(x0);
-    double yend = y0 + gradient * (xend - x0);
-    double xgap = rfpart(x0 + 0.5);
-    int xpxl1 = (int)xend; // this will be used in the main loop
-    int ypxl1 = (int)ipart(yend);
-    */
-
-
+	
+    // Clamp line to left and right edges. I am waiting until we are in int-space to do this
+    // so that the result ends up *exactly* the same as if this optimization were not here; no
+    // tricky rounding errors. This is useful for testing its correctness.
+	
+	if (x0 < -1) {
+		y0 += dblGradient * (-1 - x0);
+		x0 = -1;
+	}
+	
+	if (x1 > xMax) x1 = xMax;
+	//If adjusting x0 to make it start on the image puts x0 out of the image, the line isn't on the image.
+	//This also takes care of the double overflowing the fixed point number.
+	if (x0 > xMax) return scope.Close(Null());
+	if (y0 < -1 || y0 > yMax) return scope.Close(Null());
 
 	fixed_t fpx0 = toFixed(x0);
 	fixed_t fpx1 = toFixed(x1);
@@ -282,12 +305,13 @@ Handle<Value> node_png_encode::Line(const Arguments& args) {
 	fixed_t gradient = dx==0 ? 0 : fixedDivide(dy, dx);
 
 	fixed_t xend = fixedFloor(fpx0);
+	
 	fixed_t yend = fpy0 + fixedMultiply(gradient, xend - fpx0);
 
 	fixed_t xgap = frfpart(fpx0);// + FP_HALF);
-	printf("With x0=%f, xgap=%08x\n", x0, xgap);
 	int xpxl1 = ipartOfFixed(xend);
 	int ypxl1 = ipartOfFixed(yend);
+
 	{
 		
 		uint32_t color = ((ffpart(yend)*xgap) & 0xff000000) | BaseColor;
@@ -311,8 +335,8 @@ Handle<Value> node_png_encode::Line(const Arguments& args) {
     xgap = ffpart(fpx1);// + FP_HALF);
     int xpxl2 = ipartOfFixed(xend);  //this will be used in the main loop
     int ypxl2 = ipartOfFixed(yend);
+
     {
- 		printf("yend = %08x, xgap = %08x\n", yend, xgap);
 		uint32_t color = ((ffpart(yend)*xgap) & 0xff000000) | BaseColor;
         uint32_t colorPrime = ((frfpartBelowOne(yend)*xgap) & 0xff000000) | BaseColor;
 
@@ -327,58 +351,120 @@ Handle<Value> node_png_encode::Line(const Arguments& args) {
     }
 
 
-    // Clamp line to left and right edges. I am waiting until we are in int-space to do this
-    // so that the result ends up *exactly* the same as if this optimization were not here; no
-    // tricky rounding errors. This is useful for testing its correctness.
 
-	if (xpxl2 >= destBufferWidth) xpxl2 = destBufferWidth;
-    if (xpxl1 < -1) {
-      intery += gradient * (-1 - xpxl1);
-      xpxl1 = -1;
-    }
 
-	/*
-	printf("init y %d\n", ipartOfFixed(fpIntery));
 
-	if (ipartOfFixed(fpIntery) < 0) { //initial y pt
-		int xpxlo = xpxl1;
-		xpxl1 -= fpIntery/fpGradient;
-		fpIntery += (xpxl1 - xpxlo)<<16;
-		//don't need adjust by 2^16 for fp division and then convert to int because the increase and decrease by 2^16 cancel each other out
-	} else if (ipartOfFixed(fpIntery) >= destBufferHeight) {
-		int xpxlo = xpxl1;
-		xpxl1 -= ((fpIntery - (destBufferHeight<<16))<<16)/fpGradient
-	}
 
-	printf("Final y %d\n", ipartOfFixed(fpIntery + (xpxl2 - xpxl1)*fpGradient));
-	int ypxl2 = ipartOfFixed(fpIntery + (xpxl2 - xpxl1)*fpGradient)
-	if (ypxl2 < 0) {//check for off by 1
-		printf("here\n");
-		int ypxl2 = ;
-		int dy = ypxl2 - destBufferHeight;
-		xpxl2 -= (dy<<16)/fpGradient;
-	} else if (ypxl2 >= destBufferHeight) {
+	int x = xpxl1 + 1;
+	if (gradient >= 0) {
+		for (; x < xpxl2; x++) {
+			int alpha = (intery&0xff00)<<16; // Extracting the MSB of the fractional part, shifting to alpha slot
+			uint32_t color = alpha | BaseColor;
 
-	}
-*/
-    // main loop
-	
-    for (int x = xpxl1 + 1; x < xpxl2; x++) {
-        int alpha = (intery&0xff00)<<16; // Extracting the MSB of the fractional part, shifting to alpha slot
-        uint32_t color = alpha | BaseColor;
-        uint32_t colorPrime = (0xff000000-alpha) | BaseColor;
+			int drawY = ipartOfFixed(intery);
+			
+			if (drawY > -1) {
+				break;
+			}
+			if (steep) {
+				plot(destPixels, destBufferWidth, destBufferHeight, drawY+1, x, color);
+			} else {
+				plot(destPixels, destBufferWidth, destBufferHeight, x, drawY+1, color);
+					
+			}
 
-        int drawY = ipartOfFixed(intery);
-        if (steep) {
-            boundedPlot(destPixels, destBufferWidth, destBufferHeight, drawY, x, colorPrime);
-            boundedPlot(destPixels, destBufferWidth, destBufferHeight, drawY+1, x,  color);
-        } else {
-            boundedPlot(destPixels, destBufferWidth, destBufferHeight, x, drawY, colorPrime);
-            boundedPlot(destPixels, destBufferWidth, destBufferHeight, x, drawY+1,color);
-        }
+			intery += gradient;
+		}		
+		
+		for (; x < xpxl2; x++) {
+			int alpha = (intery&0xff00)<<16; // Extracting the MSB of the fractional part, shifting to alpha slot
+			uint32_t color = alpha | BaseColor;
+			uint32_t colorPrime = (0xff000000-alpha) | BaseColor;
 
-        intery += gradient;
-    }
+			int drawY = ipartOfFixed(intery);
+			
+			if (drawY >= yMax) {
+				break;
+			}
+			if (steep) {
+				plot(destPixels, destBufferWidth, destBufferHeight, drawY, x,  colorPrime);
+				plot(destPixels, destBufferWidth, destBufferHeight, drawY+1, x,  color);
+			} else {
+				plot(destPixels, destBufferWidth, destBufferHeight, x, drawY,colorPrime);
+				plot(destPixels, destBufferWidth, destBufferHeight, x, drawY+1,color);
+			}
+
+			intery += gradient;
+		}	
+		
+		for (; x < xpxl2; x++) {
+			uint32_t colorPrime = (0xff000000-((intery&0xff00)<<16)) | BaseColor;
+			int drawY = ipartOfFixed(intery);
+			
+			if (drawY > yMax) {
+				break;
+			}
+			if (steep) {
+				plot(destPixels, destBufferWidth, destBufferHeight, drawY, x,  colorPrime);
+			} else {
+				plot(destPixels, destBufferWidth, destBufferHeight, x, drawY, colorPrime);
+			}
+
+			intery += gradient;
+		}
+	} else if (gradient < 0) {
+		for (; x < xpxl2; x++) {
+			int alpha = (intery&0xff00)<<16; // Extracting the MSB of the fractional part, shifting to alpha slot
+			uint32_t colorPrime = (0xff000000-((intery&0xff00)<<16)) | BaseColor;
+
+			int drawY = ipartOfFixed(intery);
+			if (drawY < yMax) {
+				break;
+			}
+			if (steep) {
+				plot(destPixels, destBufferWidth, destBufferHeight, drawY, x,  colorPrime);
+			} else {
+				plot(destPixels, destBufferWidth, destBufferHeight, x, drawY, colorPrime);
+			}
+
+			intery += gradient;
+		}		
+		
+		for (; x < xpxl2; x++) {
+			int alpha = (intery&0xff00)<<16; // Extracting the MSB of the fractional part, shifting to alpha slot
+			uint32_t color = alpha | BaseColor;
+			uint32_t colorPrime = (0xff000000-alpha) | BaseColor;
+
+			int drawY = ipartOfFixed(intery);
+			if (drawY <= -1) {
+				break;
+			}
+			if (steep) {
+				plot(destPixels, destBufferWidth, destBufferHeight, drawY, x,  colorPrime);
+				plot(destPixels, destBufferWidth, destBufferHeight, drawY+1, x,  color);
+			} else {
+				plot(destPixels, destBufferWidth, destBufferHeight, x, drawY,colorPrime);
+				plot(destPixels, destBufferWidth, destBufferHeight, x, drawY+1,color);
+			}
+
+			intery += gradient;
+		}	
+		for (; x < xpxl2; x++) {
+			uint32_t color = ((intery&0xff00)<<16) | BaseColor;
+			int drawY = ipartOfFixed(intery);
+			
+			if (drawY < -1) {
+				break;
+			}
+			if (steep) {
+				plot(destPixels, destBufferWidth, destBufferHeight, drawY + 1, x,  color);
+			} else {
+				plot(destPixels, destBufferWidth, destBufferHeight, x, drawY + 1, color);
+			}
+
+			intery += gradient;
+		}	
+	} 
 
    return scope.Close(Null());
 }
