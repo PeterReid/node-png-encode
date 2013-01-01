@@ -153,13 +153,6 @@ int colorClamp(int x) {
   return x;
 }
 
-double ipart(double x) {
-  return floor(x);
-}
-double round(double x) {
-  return ipart(x + 0.5);
-}
-
 typedef int32_t fixed_t;
 const fixed_t FP_HALF = 0x00008000;
 
@@ -185,13 +178,6 @@ static fixed_t fixedMultiply(fixed_t x, fixed_t y) {
 
 static fixed_t fixedDivide(fixed_t numer, fixed_t denom) {
     return (int32_t) ((((int64_t) numer)<<16) / denom);
-}
-
-double fpart(double x) {
-  return x - ipart(x);
-}
-double rfpart(double x) {
-  return 1 - fpart(x);
 }
 
 static fixed_t ffpart(fixed_t x) {
@@ -271,13 +257,13 @@ Handle<Value> node_png_encode::Line(const Arguments& args) {
         double dbldy = -1 - y0;
         double dbldx = dbldy / dblGradient;
         x0 += dbldx;
-        y0 += dbldx * dblGradient;
+        y0 = -1;
     } else if (y0 > yMax) {
         if (dblGradient >= 0) return scope.Close(Null());
         double dbldy =  yMax - y0;
         double dbldx = dbldy / dblGradient;
         x0 += dbldx;
-        y0 += dbldx * dblGradient;
+        y0 = yMax;
     }
 
     // Clamp line to left and right edges. I am waiting until we are in int-space to do this
