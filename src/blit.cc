@@ -275,7 +275,10 @@ Handle<Value> node_png_encode::Line(const Arguments& args) {
         x0 = -1;
     }
 
-    if (x1 > xMax) x1 = xMax;
+    if (x1 > xMax) {
+        y1 += dblGradient * (xMax - x1);
+        x1 = xMax;
+    }
     //If adjusting x0 to make it start on the image puts x0 out of the image, the line isn't on the image.
     //This also takes care of the double overflowing the fixed point number.
     if (x0 > xMax) return scope.Close(Null());
