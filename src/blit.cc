@@ -138,25 +138,13 @@ Handle<Value> node_png_encode::BlitTransparently(const Arguments& args) {
     return scope.Close(Null());
 }
 
-uint32_t DOTTED_MASK[64*64/32] = {
-  1071603827U, 
-  2667990019U, 533692931U, 126846959U, 264740623U, 127911919U, 247701383U, 126076911U, 4175665635U, 251904999U, 4175560931U, 4163092931U, 4042522817U, 4168212547U, 3758603459U, 2557592003U, 101687239U, 477217731U, 252174287U, 511428550U, 2681179878U, 238931855U, 3758032995U, 103867271U, 3888152801U, 3228623299U, 3280060899U, 3773886689U, 2198070243U, 3975180515U, 522691U, 3471864291U, 2265968771U, 
-  2390114051U, 2410571971U, 2267955087U, 3742237155U, 2265849371U, 4262396899U, 2400132217U, 2020029411U, 2408517744U, 569438689U, 2273720432U, 568455617U, 2172664944U, 1640208768U, 2206481527U, 3783724807U, 126750511U, 3809182598U, 532614671U, 3750200279U, 3206541063U, 264471431U, 2350895073U, 29607879U, 2284896496U, 1088548835U, 3291496688U, 3772900339U, 3896041584U, 3774054883U, 4231917821U, 4018602884U, 
-  236912079U, 2407991052U, 235675591U, 260507534U, 504891271U, 264701919U, 477627143U, 4091803551U, 477687875U, 4056019007U, 410579425U, 4028690462U, 486077424U, 538505612U, 116945889U, 253738895U, 2382565249U, 529501967U, 252677902U, 1057951495U, 253693838U, 2131625859U, 260968223U, 3808691136U, 1930195198U, 3789554168U, 3767073017U, 3287871729U, 4052676848U, 2281435361U, 4052676833U, 2265947910U, 
-  835653892U, 34545550U, 298715023U, 35594191U, 969281423U, 2669381862U, 2026053511U, 4294033600U, 2028191727U, 4225884400U, 1886912487U, 3284201976U, 545196163U, 6396U, 821755904U, 3358606U, 2096694784U, 167747342U, 1041244034U, 4294905359U, 3189522423U, 4269673479U, 473725439U, 4030202980U, 8188151U, 3760199921U, 3993824U, 1611692539U, 4231585888U, 2014902517U, 4262486080U, 
-};
-
-void plot(uint32_t *pixels, int w, int h, int x, int y, uint32_t color, bool dotted) {
-  if (dotted) {
-    int dotIdx = (x&63)+((y&63)<<6);
-    if (DOTTED_MASK[dotIdx>>5]&(1<<(dotIdx&31))) return;
-  }
-  pixels[w*y + x] = blend(pixels[w*y + x], color);
+void plot(uint32_t *pixels, int w, int h, int x, int y, uint32_t color) {
+     pixels[w*y + x] = blend(pixels[w*y + x], color);
 }
 
-void boundedPlot(uint32_t *pixels, int w, int h, int x, int y, uint32_t color, bool dotted) {
-  if (x<0 || y<0 || x>=w || y>=h) return;
-  plot(pixels, w, h, x, y, color, dotted);
+void boundedPlot(uint32_t *pixels, int w, int h, int x, int y, uint32_t color) {
+    if (x<0 || y<0 || x>=w || y>=h) return;
+    pixels[w*y + x] = blend(pixels[w*y + x], color);
 }
 
 int colorClamp(int x) {
@@ -217,6 +205,8 @@ static int ipartOfFixed(fixed_t x) {
 
 
 
+
+
 //http://en.wikipedia.org/wiki/Xiaolin_Wu%27s_line_algorithm
 Handle<Value> node_png_encode::Line(const Arguments& args) {
     HandleScope scope;
@@ -239,10 +229,7 @@ Handle<Value> node_png_encode::Line(const Arguments& args) {
     REQUIRE_ARGUMENT_INTEGER(7, red);
     REQUIRE_ARGUMENT_INTEGER(8, green);
     REQUIRE_ARGUMENT_INTEGER(9, blue);
-    
-    OPTIONAL_ARGUMENT_BOOLEAN(10, dotted, false);
-   // bool dotted = idotted.Value();
-    
+
     int BaseColor = RGBA(colorClamp(red), colorClamp(green), colorClamp(blue), 0);
 
     bool steep = abs(y1 - y0) > abs(x1 - x0);
@@ -323,11 +310,11 @@ Handle<Value> node_png_encode::Line(const Arguments& args) {
         // So, we use frfpartBelowOne to get that one strictly less than.
         uint32_t colorPrime = ((frfpartBelowOne(yend)*xgap) & 0xff000000) | BaseColor;
         if (steep) {
-            boundedPlot(destPixels, destBufferWidth, destBufferHeight, ypxl1,   xpxl1, colorPrime, dotted);// rfpart(yend) * xgap);
-            boundedPlot(destPixels, destBufferWidth, destBufferHeight, ypxl1+1, xpxl1, color, dotted);// fpart(yend) * xgap);
+            boundedPlot(destPixels, destBufferWidth, destBufferHeight, ypxl1,   xpxl1, colorPrime);// rfpart(yend) * xgap);
+            boundedPlot(destPixels, destBufferWidth, destBufferHeight, ypxl1+1, xpxl1, color);// fpart(yend) * xgap);
         } else {
-            boundedPlot(destPixels, destBufferWidth, destBufferHeight, xpxl1, ypxl1  , colorPrime, dotted);//rfpart(yend) * xgap);
-            boundedPlot(destPixels, destBufferWidth, destBufferHeight, xpxl1, ypxl1+1,  color, dotted);//fpart(yend) * xgap);
+            boundedPlot(destPixels, destBufferWidth, destBufferHeight, xpxl1, ypxl1  , colorPrime);//rfpart(yend) * xgap);
+            boundedPlot(destPixels, destBufferWidth, destBufferHeight, xpxl1, ypxl1+1,  color);//fpart(yend) * xgap);
         }
     }
     fixed_t intery = yend + gradient; //first y-intersection for the main loop
@@ -343,11 +330,11 @@ Handle<Value> node_png_encode::Line(const Arguments& args) {
         uint32_t colorPrime = ((frfpartBelowOne(yend)*xgap) & 0xff000000) | BaseColor;
 
         if (steep) {
-            boundedPlot(destPixels, destBufferWidth, destBufferHeight, ypxl2  , xpxl2, colorPrime, dotted);//rfpart(yend) * xgap);
-            boundedPlot(destPixels, destBufferWidth, destBufferHeight, ypxl2+1, xpxl2, color, dotted);// fpart(yend) * xgap);
+            boundedPlot(destPixels, destBufferWidth, destBufferHeight, ypxl2  , xpxl2, colorPrime);//rfpart(yend) * xgap);
+            boundedPlot(destPixels, destBufferWidth, destBufferHeight, ypxl2+1, xpxl2, color);// fpart(yend) * xgap);
         } else {
-            boundedPlot(destPixels, destBufferWidth, destBufferHeight, xpxl2, ypxl2,  colorPrime, dotted);//rfpart(yend) * xgap);
-            boundedPlot(destPixels, destBufferWidth, destBufferHeight, xpxl2, ypxl2+1, color, dotted);//fpart(yend) * xgap);
+            boundedPlot(destPixels, destBufferWidth, destBufferHeight, xpxl2, ypxl2,  colorPrime);//rfpart(yend) * xgap);
+            boundedPlot(destPixels, destBufferWidth, destBufferHeight, xpxl2, ypxl2+1, color);//fpart(yend) * xgap);
         }
 
     }
@@ -369,9 +356,9 @@ Handle<Value> node_png_encode::Line(const Arguments& args) {
                 break;
             }
             if (steep) {
-                plot(destPixels, destBufferWidth, destBufferHeight, drawY+1, x, color, dotted);
+                plot(destPixels, destBufferWidth, destBufferHeight, drawY+1, x, color);
             } else {
-                plot(destPixels, destBufferWidth, destBufferHeight, x, drawY+1, color, dotted);
+                plot(destPixels, destBufferWidth, destBufferHeight, x, drawY+1, color);
 
             }
 
@@ -389,11 +376,11 @@ Handle<Value> node_png_encode::Line(const Arguments& args) {
                 break;
             }
             if (steep) {
-                plot(destPixels, destBufferWidth, destBufferHeight, drawY, x,  colorPrime, dotted);
-                plot(destPixels, destBufferWidth, destBufferHeight, drawY+1, x,  color, dotted);
+                plot(destPixels, destBufferWidth, destBufferHeight, drawY, x,  colorPrime);
+                plot(destPixels, destBufferWidth, destBufferHeight, drawY+1, x,  color);
             } else {
-                plot(destPixels, destBufferWidth, destBufferHeight, x, drawY,colorPrime, dotted);
-                plot(destPixels, destBufferWidth, destBufferHeight, x, drawY+1,color, dotted);
+                plot(destPixels, destBufferWidth, destBufferHeight, x, drawY,colorPrime);
+                plot(destPixels, destBufferWidth, destBufferHeight, x, drawY+1,color);
             }
 
             intery += gradient;
@@ -407,9 +394,9 @@ Handle<Value> node_png_encode::Line(const Arguments& args) {
                 break;
             }
             if (steep) {
-                plot(destPixels, destBufferWidth, destBufferHeight, drawY, x,  colorPrime, dotted);
+                plot(destPixels, destBufferWidth, destBufferHeight, drawY, x,  colorPrime);
             } else {
-                plot(destPixels, destBufferWidth, destBufferHeight, x, drawY, colorPrime, dotted);
+                plot(destPixels, destBufferWidth, destBufferHeight, x, drawY, colorPrime);
             }
 
             intery += gradient;
@@ -424,9 +411,9 @@ Handle<Value> node_png_encode::Line(const Arguments& args) {
                 break;
             }
             if (steep) {
-                plot(destPixels, destBufferWidth, destBufferHeight, drawY, x,  colorPrime, dotted);
+                plot(destPixels, destBufferWidth, destBufferHeight, drawY, x,  colorPrime);
             } else {
-                plot(destPixels, destBufferWidth, destBufferHeight, x, drawY, colorPrime, dotted);
+                plot(destPixels, destBufferWidth, destBufferHeight, x, drawY, colorPrime);
             }
 
             intery += gradient;
@@ -442,11 +429,11 @@ Handle<Value> node_png_encode::Line(const Arguments& args) {
                 break;
             }
             if (steep) {
-                plot(destPixels, destBufferWidth, destBufferHeight, drawY, x,  colorPrime, dotted);
-                plot(destPixels, destBufferWidth, destBufferHeight, drawY+1, x,  color, dotted);
+                plot(destPixels, destBufferWidth, destBufferHeight, drawY, x,  colorPrime);
+                plot(destPixels, destBufferWidth, destBufferHeight, drawY+1, x,  color);
             } else {
-                plot(destPixels, destBufferWidth, destBufferHeight, x, drawY,colorPrime, dotted);
-                plot(destPixels, destBufferWidth, destBufferHeight, x, drawY+1,color, dotted);
+                plot(destPixels, destBufferWidth, destBufferHeight, x, drawY,colorPrime);
+                plot(destPixels, destBufferWidth, destBufferHeight, x, drawY+1,color);
             }
 
             intery += gradient;
@@ -459,9 +446,9 @@ Handle<Value> node_png_encode::Line(const Arguments& args) {
                 break;
             }
             if (steep) {
-                plot(destPixels, destBufferWidth, destBufferHeight, drawY + 1, x,  color, dotted);
+                plot(destPixels, destBufferWidth, destBufferHeight, drawY + 1, x,  color);
             } else {
-                plot(destPixels, destBufferWidth, destBufferHeight, x, drawY + 1, color, dotted);
+                plot(destPixels, destBufferWidth, destBufferHeight, x, drawY + 1, color);
             }
 
             intery += gradient;

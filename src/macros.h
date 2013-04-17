@@ -90,19 +90,6 @@ const char* sqlite_authorizer_string(int type);
         );                                                                     \
     }
 
-#define OPTIONAL_ARGUMENT_BOOLEAN(i, var, default)                             \
-    bool var;                                                                   \
-    if (args.Length() <= (i)) {                                                \
-        var = (default);                                                       \
-    }                                                                          \
-    else if (args[i]->IsBoolean()) {                                           \
-        var = args[i]->BooleanValue();                                         \
-    }                                                                          \
-    else {                                                                     \
-        return ThrowException(Exception::TypeError(                            \
-            String::New("Argument " #i " must be a boolean"))                  \
-        );                                                                     \
-    }
 
 #define DEFINE_CONSTANT_INTEGER(target, constant, name)                        \
     (target)->Set(                                                             \
