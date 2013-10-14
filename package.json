@@ -1,42 +1,18 @@
 {
     "name": "node-png-encode",
-    "description": "Asynchronous, non-blocking SQLite3 bindings",
+    "description": "PNG encoder",
     "version": "2.1.6",
-    "homepage": "http://github.com/developmentseed/node-sqlite3",
+    "homepage": "git://github.com/PeterReid/node-png-encode.git",
     "author": {
-        "name": "Development Seed",
-        "url": "http://developmentseed.org/",
-        "email": "info@developmentseed.org"
     },
     "contributors": [
-        "Konstantin Käfer <mail@kkaefer.com>",
-        "Dane Springmeyer <dane@developmentseed.org>",
-        "Will White <will@developmentseed.org>",
-        "Orlando Vazquez <ovazquez@gmail.com>",
-        "Artem Kustikov <kustikoff@gmail.com>",
-        "Eric Fredricksen <efredricksen@gmail.com>",
-        "John Wright <mrjjwright@gmail.com>",
-        "Ryan Dahl <ry@tinyclouds.org>",
-        "Tom MacWright <tom@developmentseed.org>",
-        "Carter Thaxton <carter.thaxton@gmail.com>",
-        "Audrius Kažukauskas <audrius@neutrino.lt>",
-        "Johannes Schauer <josch@pyneo.org>",
-        "Nathan Rajlich <nathan@tootallnate.net>",
-        "AJ ONeal <coolaj86@gmail.com>"
     ],
     "repository": {
         "type": "git",
-        "url": "git://github.com/developmentseed/node-sqlite3.git"
-    },
-    "devDependencies": {
-        "step": "0.0.4",
-        "expresso": "*"
+        "url": "git://github.com/PeterReid/node-png-encode.git"
     },
     "engines": {
         "node": ">= 0.6.13 && < 0.9.0"
-    },
-    "scripts": {
-        "test": "make test"
     },
     "licenses": [{ "type": "BSD" }],
     "main": "./lib/index"

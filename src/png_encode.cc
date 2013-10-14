@@ -116,7 +116,6 @@ struct EncodeBaton : Baton {
     static void Work(uv_work_t *req) {
         EncodeBaton *baton = static_cast<EncodeBaton *>(req->data);
         int write_result = write_png(baton->pixel_bytes, baton->width, baton->height, &baton->png_bytes);
-        printf("write_result = %d\n", write_result);
     }
     
     static void After(uv_work_t *req) {
@@ -132,7 +131,6 @@ struct EncodeBaton : Baton {
         
         if (!baton->callback.IsEmpty() && baton->callback->IsFunction()) {
             TRY_CATCH_CALL(baton->context, baton->callback, 2, argv);
-            printf("After teh try-catch\n");
         }
         
         delete baton;
