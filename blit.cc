@@ -30,24 +30,30 @@ static uint32_t blend(uint32_t bottom, uint32_t top) {
     #define ALPHAOF(x) (((x)>>24) & 0xff)
     #define RGBA(r,g,b,a) ((a<<24) | (b<<16) | (g<<8) | (r))
 
+    int sG, sA;
+    int dG, dA;
+    int dAAdjusted;
+    int outG, outR, outB, outA;
+    int outRBNumerator;
+
     // Otherwise, it is transparent. Probability 1 - sA - (1-sA)*dA
-    int sG = GREENOF(top), sR = REDOF(top), sB = BLUEOF(top), sA = ALPHAOF(top);
+    sG = GREENOF(top), sA = ALPHAOF(top);
 
     if (sA==0) return bottom;
     if (sA==255) return top;
 
-    int dG = GREENOF(bottom), dR = REDOF(bottom), dB = BLUEOF(bottom), dA = ALPHAOF(bottom);
+    dG = GREENOF(bottom), dA = ALPHAOF(bottom);
 
 
-    int dAAdjusted = ((256-sA)*dA)>>8;
+    dAAdjusted = ((256-sA)*dA)>>8;
 
-    int outA = sA + dAAdjusted;
-    int outG = (sG*sA + dG*dAAdjusted) / outA;
+    outA = sA + dAAdjusted;
+    outG = (sG*sA + dG*dAAdjusted) / outA;
 
-    int outRBNumerator = ((top&0x00ff00ff)*sA + ((bottom&0x00ff00ff)*dAAdjusted));
+    outRBNumerator = ((top&0x00ff00ff)*sA + ((bottom&0x00ff00ff)*dAAdjusted));
 
-    int outR = ((outRBNumerator&0x0000ffff) / outA);
-    int outB = (((outRBNumerator&0xffff0000) / outA)&0x00ff0000);
+    outR = ((outRBNumerator&0x0000ffff) / outA);
+    outB = (((outRBNumerator&0xffff0000) / outA)&0x00ff0000);
 
     return RGBA(outR, outG, 0, outA) | outB;
 }
@@ -61,6 +67,11 @@ napi_value blit_transparently(napi_env env, napi_callback_info cbinfo) {
   const char *invalid_arguments_error = "invalid argument types";
   napi_value cbinfo_this;
   void *cbinfo_data;
+
+  void *destBuffer; size_t destBufferLength;
+  void *sourceBuffer; size_t sourceBufferLength;
+  int32_t destBufferWidth, destBufferHeight, destX, destY, sourceBufferWidth, sourceBufferHeight, sourceX, sourceY, copyWidth, copyHeight;
+  uint32_t *destPixels, *sourcePixels;
   
   status = napi_get_cb_info(env, cbinfo, &argc, argv, &cbinfo_this, &cbinfo_data);
   if (status != napi_ok) goto out;
@@ -72,7 +83,7 @@ napi_value blit_transparently(napi_env env, napi_callback_info cbinfo) {
   REQUIRE_ARGUMENT_BUFFER(0, destBuffer, destBufferLength);
   REQUIRE_ARGUMENT_INTEGER(1, destBufferWidth);
   REQUIRE_ARGUMENT_INTEGER(2, destBufferHeight);
-  if (destBufferWidth <= 0 || destBufferHeight <= 0 || destBufferWidth*destBufferHeight*BYTES_PER_PIXEL > destBufferLength) {
+  if (destBufferWidth <= 0 || destBufferHeight <= 0 || destBufferWidth*destBufferHeight*BYTES_PER_PIXEL > (int32_t)destBufferLength) {
     error = "Invalid destination width or height";
     goto out;
   }
@@ -82,7 +93,7 @@ napi_value blit_transparently(napi_env env, napi_callback_info cbinfo) {
   REQUIRE_ARGUMENT_BUFFER(5, sourceBuffer, sourceBufferLength);
   REQUIRE_ARGUMENT_INTEGER(6, sourceBufferWidth);
   REQUIRE_ARGUMENT_INTEGER(7, sourceBufferHeight);
-  if (sourceBufferWidth <= 0 || sourceBufferHeight <= 0 || sourceBufferWidth*sourceBufferHeight*BYTES_PER_PIXEL > sourceBufferLength) {
+  if (sourceBufferWidth <= 0 || sourceBufferHeight <= 0 || sourceBufferWidth*sourceBufferHeight*BYTES_PER_PIXEL > (int32_t)sourceBufferLength) {
     error = "Invalid source width or height";
     goto out;
   }
@@ -93,8 +104,8 @@ napi_value blit_transparently(napi_env env, napi_callback_info cbinfo) {
   REQUIRE_ARGUMENT_INTEGER(10, copyWidth);
   REQUIRE_ARGUMENT_INTEGER(11, copyHeight);
 
-  uint32_t *destPixels = reinterpret_cast<uint32_t *>(destBuffer);
-  uint32_t *sourcePixels = reinterpret_cast<uint32_t *>(sourceBuffer);
+  destPixels = reinterpret_cast<uint32_t *>(destBuffer);
+  sourcePixels = reinterpret_cast<uint32_t *>(sourceBuffer);
 
   // TODO: Assumptions to avoid off-of-buffer!
 
@@ -170,20 +181,20 @@ typedef int32_t fixed_t;
 const fixed_t FP_HALF = 0x00008000;
 
 
-static fixed_t fixedRound(fixed_t x) {
+/*static fixed_t fixedRound(fixed_t x) {
     return 0xffff0000&(x + FP_HALF);
-}
+}*/
 
 static fixed_t fixedFloor(fixed_t x) {
     return 0xffff0000&x;
 }
-
+/*
 static fixed_t fixedCeil(fixed_t x) {
     if ((x&0x0000ffff) == 0) {
         return x;
     }
     return (x&0xffff0000)+0x00010000;
-}
+}*/
 
 static fixed_t fixedMultiply(fixed_t x, fixed_t y) {
     return (int32_t) ((((int64_t) x) * ((int64_t) y)) >>16);
@@ -228,7 +239,31 @@ napi_value line(napi_env env, napi_callback_info cbinfo) {
   const char *invalid_arguments_error = "invalid argument types";
   napi_value cbinfo_this;
   void *cbinfo_data;
-  
+  uint32_t *destPixels;
+  int BaseColor;
+  bool steep;
+  double dbldx, dbldy, dblGradient;
+  int xMax, yMax;
+  fixed_t fpx0;
+  fixed_t fpx1;
+  fixed_t fpy0;
+  fixed_t fpy1;
+  fixed_t dx;
+  fixed_t dy;
+  fixed_t gradient;
+  fixed_t xend;
+  fixed_t yend;
+  fixed_t xgap;
+  fixed_t intery;
+  int xpxl1, ypxl1, xpxl2, ypxl2;
+  uint32_t color, colorPrime;
+  int x, alpha, drawY;
+  double x0, y0, x1, y1;
+  int32_t red, green, blue;
+  int32_t destBufferWidth, destBufferHeight;
+  void *destBuffer;
+  size_t destBufferLength;
+
   status = napi_get_cb_info(env, cbinfo, &argc, argv, &cbinfo_this, &cbinfo_data);
   if (status != napi_ok) goto out;
   if (argc < 10) {
@@ -239,11 +274,11 @@ napi_value line(napi_env env, napi_callback_info cbinfo) {
     REQUIRE_ARGUMENT_BUFFER(0, destBuffer, destBufferLength);
     REQUIRE_ARGUMENT_INTEGER(1, destBufferWidth);
     REQUIRE_ARGUMENT_INTEGER(2, destBufferHeight);
-    if (destBufferWidth <= 0 || destBufferHeight <= 0 || destBufferWidth*destBufferHeight*BYTES_PER_PIXEL > destBufferLength) {
+    if (destBufferWidth <= 0 || destBufferHeight <= 0 || destBufferWidth*destBufferHeight*BYTES_PER_PIXEL > (int32_t)destBufferLength) {
         error = "Invalid destination width or height";
         goto out;
     }
-    uint32_t *destPixels = reinterpret_cast<uint32_t *>(destBuffer);
+    destPixels = reinterpret_cast<uint32_t *>(destBuffer);
 
     REQUIRE_ARGUMENT_DOUBLE(3, x0);
     REQUIRE_ARGUMENT_DOUBLE(4, y0);
@@ -254,9 +289,9 @@ napi_value line(napi_env env, napi_callback_info cbinfo) {
     REQUIRE_ARGUMENT_INTEGER(8, green);
     REQUIRE_ARGUMENT_INTEGER(9, blue);
 
-    int BaseColor = RGBA(colorClamp(red), colorClamp(green), colorClamp(blue), 0);
+    BaseColor = RGBA(colorClamp(red), colorClamp(green), colorClamp(blue), 0);
 
-    bool steep = abs(y1 - y0) > abs(x1 - x0);
+    steep = abs(y1 - y0) > abs(x1 - x0);
 
     if (steep) {
         std::swap(x0, y0);
@@ -267,25 +302,25 @@ napi_value line(napi_env env, napi_callback_info cbinfo) {
       std::swap(y0, y1);
     }
 
-    double dbldx = x1 - x0;
-    double dbldy = y1 - y0;
-    double dblGradient = dbldx==0 ? 0 : dbldy / dbldx;
+    dbldx = x1 - x0;
+    dbldy = y1 - y0;
+    dblGradient = dbldx==0 ? 0 : dbldy / dbldx;
 
 
 
-    int yMax = steep ? destBufferWidth - 1 : destBufferHeight - 1;
-    int xMax = steep ? destBufferHeight - 1 : destBufferWidth - 1;
+    yMax = steep ? destBufferWidth - 1 : destBufferHeight - 1;
+    xMax = steep ? destBufferHeight - 1 : destBufferWidth - 1;
 
     if (y0 < -1) {
         if (dblGradient <= 0) goto out;
-        double dbldy = -1 - y0;
-        double dbldx = dbldy / dblGradient;
+        dbldy = -1 - y0;
+        dbldx = dbldy / dblGradient;
         x0 += dbldx;
         y0 = -1;
     } else if (y0 > yMax) {
         if (dblGradient >= 0) goto out;
-        double dbldy =  yMax - y0;
-        double dbldx = dbldy / dblGradient;
+        dbldy =  yMax - y0;
+        dbldx = dbldy / dblGradient;
         x0 += dbldx;
         y0 = yMax;
     }
@@ -308,31 +343,31 @@ napi_value line(napi_env env, napi_callback_info cbinfo) {
     if (x0 > xMax) goto out;
     if (y0 < -1 || y0 > yMax) goto out;
 
-    fixed_t fpx0 = toFixed(x0);
-    fixed_t fpx1 = toFixed(x1);
-    fixed_t fpy0 = toFixed(y0);
-    fixed_t fpy1 = toFixed(y1);
-    fixed_t dx = fpx1 - fpx0;
-    fixed_t dy = fpy1 - fpy0;
+    fpx0 = toFixed(x0);
+    fpx1 = toFixed(x1);
+    fpy0 = toFixed(y0);
+    fpy1 = toFixed(y1);
+    dx = fpx1 - fpx0;
+    dy = fpy1 - fpy0;
 
-    fixed_t gradient = dx==0 ? 0 : fixedDivide(dy, dx);
+    gradient = dx==0 ? 0 : fixedDivide(dy, dx);
 
-    fixed_t xend = fixedFloor(fpx0);
+    xend = fixedFloor(fpx0);
 
-    fixed_t yend = fpy0 + fixedMultiply(gradient, xend - fpx0);
+    yend = fpy0 + fixedMultiply(gradient, xend - fpx0);
 
-    fixed_t xgap = frfpart(fpx0);// + FP_HALF);
-    int xpxl1 = ipartOfFixed(xend);
-    int ypxl1 = ipartOfFixed(yend);
+    xgap = frfpart(fpx0);// + FP_HALF);
+    xpxl1 = ipartOfFixed(xend);
+    ypxl1 = ipartOfFixed(yend);
 
     {
 
-        uint32_t color = ((ffpart(yend)*xgap) & 0xff000000) | BaseColor;
+        color = ((ffpart(yend)*xgap) & 0xff000000) | BaseColor;
         // We rely on having at least one factor in the product below less than one
         // and the other less than or equal to one. Otherwise, we end up with a
         // product that overflows the 32 bits. (0x00010000*0x00010000 = 0).
         // So, we use frfpartBelowOne to get that one strictly less than.
-        uint32_t colorPrime = ((frfpartBelowOne(yend)*xgap) & 0xff000000) | BaseColor;
+        colorPrime = ((frfpartBelowOne(yend)*xgap) & 0xff000000) | BaseColor;
         if (steep) {
             boundedPlot(destPixels, destBufferWidth, destBufferHeight, ypxl1,   xpxl1, colorPrime);// rfpart(yend) * xgap);
             boundedPlot(destPixels, destBufferWidth, destBufferHeight, ypxl1+1, xpxl1, color);// fpart(yend) * xgap);
@@ -341,17 +376,17 @@ napi_value line(napi_env env, napi_callback_info cbinfo) {
             boundedPlot(destPixels, destBufferWidth, destBufferHeight, xpxl1, ypxl1+1,  color);//fpart(yend) * xgap);
         }
     }
-    fixed_t intery = yend + gradient; //first y-intersection for the main loop
+    intery = yend + gradient; //first y-intersection for the main loop
     //handle second endpoint
     xend = fixedFloor(fpx1 + 0x10000);
     yend = fpy1 + fixedMultiply(gradient, xend - fpx1);
     xgap = ffpart(fpx1);// + FP_HALF);
-    int xpxl2 = ipartOfFixed(xend);  //this will be used in the main loop
-    int ypxl2 = ipartOfFixed(yend);
+    xpxl2 = ipartOfFixed(xend);  //this will be used in the main loop
+    ypxl2 = ipartOfFixed(yend);
 
     {
-        uint32_t color = ((ffpart(yend)*xgap) & 0xff000000) | BaseColor;
-        uint32_t colorPrime = ((frfpartBelowOne(yend)*xgap) & 0xff000000) | BaseColor;
+        color = ((ffpart(yend)*xgap) & 0xff000000) | BaseColor;
+        colorPrime = ((frfpartBelowOne(yend)*xgap) & 0xff000000) | BaseColor;
 
         if (steep) {
             boundedPlot(destPixels, destBufferWidth, destBufferHeight, ypxl2  , xpxl2, colorPrime);//rfpart(yend) * xgap);
@@ -365,16 +400,13 @@ napi_value line(napi_env env, napi_callback_info cbinfo) {
 
 
 
-
-
-
-    int x = xpxl1 + 1;
+    x = xpxl1 + 1;
     if (gradient >= 0) {
         for (; x < xpxl2; x++) {
-            int alpha = (intery&0xff00)<<16; // Extracting the MSB of the fractional part, shifting to alpha slot
-            uint32_t color = alpha | BaseColor;
+            alpha = (intery&0xff00)<<16; // Extracting the MSB of the fractional part, shifting to alpha slot
+            color = alpha | BaseColor;
 
-            int drawY = ipartOfFixed(intery);
+            drawY = ipartOfFixed(intery);
 
             if (drawY > -1) {
                 break;
@@ -390,11 +422,11 @@ napi_value line(napi_env env, napi_callback_info cbinfo) {
         }
 
         for (; x < xpxl2; x++) {
-            int alpha = (intery&0xff00)<<16; // Extracting the MSB of the fractional part, shifting to alpha slot
-            uint32_t color = alpha | BaseColor;
-            uint32_t colorPrime = (0xff000000-alpha) | BaseColor;
+            alpha = (intery&0xff00)<<16; // Extracting the MSB of the fractional part, shifting to alpha slot
+            color = alpha | BaseColor;
+            colorPrime = (0xff000000-alpha) | BaseColor;
 
-            int drawY = ipartOfFixed(intery);
+            drawY = ipartOfFixed(intery);
 
             if (drawY >= yMax) {
                 break;
@@ -411,8 +443,8 @@ napi_value line(napi_env env, napi_callback_info cbinfo) {
         }
 
         for (; x < xpxl2; x++) {
-            uint32_t colorPrime = (0xff000000-((intery&0xff00)<<16)) | BaseColor;
-            int drawY = ipartOfFixed(intery);
+            colorPrime = (0xff000000-((intery&0xff00)<<16)) | BaseColor;
+            drawY = ipartOfFixed(intery);
 
             if (drawY > yMax) {
                 break;
@@ -427,10 +459,10 @@ napi_value line(napi_env env, napi_callback_info cbinfo) {
         }
     } else if (gradient < 0) {
         for (; x < xpxl2; x++) {
-            int alpha = (intery&0xff00)<<16; // Extracting the MSB of the fractional part, shifting to alpha slot
-            uint32_t colorPrime = (0xff000000-((intery&0xff00)<<16)) | BaseColor;
+            alpha = (intery&0xff00)<<16; // Extracting the MSB of the fractional part, shifting to alpha slot
+            colorPrime = (0xff000000-((intery&0xff00)<<16)) | BaseColor;
 
-            int drawY = ipartOfFixed(intery);
+            drawY = ipartOfFixed(intery);
             if (drawY < yMax) {
                 break;
             }
@@ -444,11 +476,11 @@ napi_value line(napi_env env, napi_callback_info cbinfo) {
         }
 
         for (; x < xpxl2; x++) {
-            int alpha = (intery&0xff00)<<16; // Extracting the MSB of the fractional part, shifting to alpha slot
-            uint32_t color = alpha | BaseColor;
-            uint32_t colorPrime = (0xff000000-alpha) | BaseColor;
+            alpha = (intery&0xff00)<<16; // Extracting the MSB of the fractional part, shifting to alpha slot
+            color = alpha | BaseColor;
+            colorPrime = (0xff000000-alpha) | BaseColor;
 
-            int drawY = ipartOfFixed(intery);
+            drawY = ipartOfFixed(intery);
             if (drawY <= -1) {
                 break;
             }
@@ -463,8 +495,8 @@ napi_value line(napi_env env, napi_callback_info cbinfo) {
             intery += gradient;
         }
         for (; x < xpxl2; x++) {
-            uint32_t color = ((intery&0xff00)<<16) | BaseColor;
-            int drawY = ipartOfFixed(intery);
+            color = ((intery&0xff00)<<16) | BaseColor;
+            drawY = ipartOfFixed(intery);
 
             if (drawY < -1) {
                 break;
@@ -494,6 +526,15 @@ napi_value recolor(napi_env env, napi_callback_info cbinfo) {
   const char *invalid_arguments_error = "invalid argument types";
   napi_value cbinfo_this;
   void *cbinfo_data;
+
+  uint32_t color;
+  int pixelCount;
+  uint32_t *destPixels;
+  int i;
+
+  int32_t red, green, blue;
+  void *destBuffer;
+  size_t destBufferLength;
   
   status = napi_get_cb_info(env, cbinfo, &argc, argv, &cbinfo_this, &cbinfo_data);
   if (status != napi_ok) goto out;
@@ -511,11 +552,11 @@ napi_value recolor(napi_env env, napi_callback_info cbinfo) {
   green = colorClamp(green);
   blue = colorClamp(blue);
 
-  uint32_t color = RGBA(red, green, blue, 0);
+  color = RGBA(red, green, blue, 0);
 
-  int pixelCount = (int)(destBufferLength) / sizeof(uint32_t);
-  uint32_t *destPixels = reinterpret_cast<uint32_t *>(destBuffer);
-  for (int i = 0; i < pixelCount; i++) {
+  pixelCount = (int)(destBufferLength) / sizeof(uint32_t);
+  destPixels = reinterpret_cast<uint32_t *>(destBuffer);
+  for (i = 0; i < pixelCount; i++) {
     destPixels[i] = (0xff000000 & destPixels[i]) | color;
   }
 

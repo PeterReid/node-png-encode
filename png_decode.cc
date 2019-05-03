@@ -100,14 +100,20 @@ void decode_png_complete(napi_env env, napi_status status, void* data)
 {
   decode_baton *baton = (decode_baton *)data;
   
-  napi_value cb;
-  status = napi_get_reference_value(env, baton->callback, &cb);
-  if (status != napi_ok) goto out;
-  
   napi_value err;
   napi_value width;
   napi_value height;
   napi_value pixel_buffer;
+
+  void *buffer_data;
+  size_t data_size;
+  napi_value args[5];
+  
+  napi_value cb;
+  napi_value result;
+
+  status = napi_get_reference_value(env, baton->callback, &cb);
+  if (status != napi_ok) goto out;
   
   status = napi_get_null(env, &err);
   if (status != napi_ok) goto out;
@@ -118,20 +124,17 @@ void decode_png_complete(napi_env env, napi_status status, void* data)
   status = napi_create_int32(env, baton->height, &height);
   if (status != napi_ok) goto out;
   
-  void *buffer_data;
-  size_t data_size = baton->width * baton->height * BYTES_PER_PIXEL;
+  data_size = baton->width * baton->height * BYTES_PER_PIXEL;
   status = napi_create_buffer(env, data_size, &buffer_data, &pixel_buffer);
   if (status != napi_ok) goto out;
   
   memcpy(buffer_data, baton->pixel_bytes, data_size);
   
-  napi_value args[5];
   args[0] = err;
   args[1] = width;
   args[2] = height;
   args[3] = pixel_buffer;
 
-  napi_value result;
   napi_call_function(env, cb, cb, 4, args, &result);
   
   
@@ -149,12 +152,16 @@ napi_value decode(napi_env env, napi_callback_info cbinfo) {
   napi_async_work work = nullptr;
   napi_ref callback_ref = nullptr;
   napi_ref buffer_ref = nullptr;
+
+  napi_value buffer;
+  napi_value cb;
+  napi_value decode_description;
   
   size_t argc = 2;
   napi_value argv[2];
   napi_value cbinfo_this;
   void *cbinfo_data;
-  png_byte *png_bytes;
+  void *png_bytes;
   size_t png_byte_count;
   
   decode_baton *baton = nullptr;
@@ -164,12 +171,11 @@ napi_value decode(napi_env env, napi_callback_info cbinfo) {
   status = napi_get_cb_info(env, cbinfo, &argc, argv, &cbinfo_this, &cbinfo_data);
   if (status != napi_ok) goto out;
   
-  napi_value buffer = argv[0];
-  napi_value cb = argv[1];
+  buffer = argv[0];
+  cb = argv[1];
   
-  status = napi_get_buffer_info(env, buffer, &(void *)png_bytes, &png_byte_count);
+  status = napi_get_buffer_info(env, buffer, &png_bytes, &png_byte_count);
   
-  napi_value decode_description;
   status = napi_create_string_utf8(env, "png decode", NAPI_AUTO_LENGTH, &decode_description);
   if (status != napi_ok) goto out;
   
@@ -185,7 +191,7 @@ napi_value decode(napi_env env, napi_callback_info cbinfo) {
   baton->work = work;
   baton->callback = callback_ref;
   baton->png_buffer = buffer_ref;
-  baton->png_bytes = png_bytes;
+  baton->png_bytes = (png_byte *)png_bytes;
   baton->png_byte_count = png_byte_count;
   baton->png_byte_offset = 0;
   

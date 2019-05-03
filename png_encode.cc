@@ -16,6 +16,10 @@ void vector_flush_fn(png_structp png_ptr) {
 
 int write_png(const png_byte *data, size_t width, size_t height, ByteBuilder *buffer) {
   /* Initialize the write struct. */
+  png_byte **row_pointers;
+  png_byte *row_pointer;
+  png_uint_32 bytes_per_row;
+  
   png_structp png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
   if (png_ptr == NULL) {
     return -1;
@@ -70,9 +74,9 @@ int write_png(const png_byte *data, size_t width, size_t height, ByteBuilder *bu
                PNG_FILTER_TYPE_DEFAULT);
   
   /* Initialize rows of PNG. */
-  png_byte **row_pointers = new png_byte *[height];
-  png_byte *row_pointer = const_cast<png_byte *>(data);
-  png_uint_32 bytes_per_row = width * BYTES_PER_PIXEL;
+  row_pointers = new png_byte *[height];
+  row_pointer = const_cast<png_byte *>(data);
+  bytes_per_row = width * BYTES_PER_PIXEL;
   
   for (size_t y = 0; y < height; ++y) {
     row_pointers[y] = row_pointer;
@@ -108,22 +112,22 @@ struct encode_baton {
 void encode_png_execute(napi_env env, void* data)
 {
   encode_baton *baton = (encode_baton *)data;
-  int write_result = write_png(baton->pixel_bytes, baton->width, baton->height, &baton->png_bytes);
+  write_png(baton->pixel_bytes, baton->width, baton->height, &baton->png_bytes);
 }
 
 void encode_png_complete(napi_env env, napi_status status, void* data) {
   encode_baton *baton = (encode_baton *)(data);
   
   napi_value buffer;
-  char *buffer_data = nullptr;
-  status = napi_create_buffer(env, baton->png_bytes.length, &(void *)buffer_data, &buffer);
+  void *buffer_data = nullptr;
+  status = napi_create_buffer(env, baton->png_bytes.length, &buffer_data, &buffer);
   if (status != napi_ok) goto out;
   
   napi_value cb;
   status = napi_get_reference_value(env, baton->callback, &cb);
   if (status != napi_ok) goto out;
   
-  baton->png_bytes.copy_to( buffer_data );
+  baton->png_bytes.copy_to( (char *)buffer_data );
   
   napi_value err;
   status = napi_get_null(env, &err);
@@ -158,6 +162,12 @@ napi_value encode(napi_env env, napi_callback_info cbinfo) {
   const char *invalid_arguments_error = "invalid argument types";
   napi_value cbinfo_this;
   void *cbinfo_data;
+  napi_value cb;
+  int32_t width, height;
+  void *buffer;
+  size_t bufferLength;
+  encode_baton *baton = nullptr;
+  napi_value encode_description;
 
   status = napi_get_cb_info(env, cbinfo, &argc, argv, &cbinfo_this, &cbinfo_data);
   if (status != napi_ok) goto out;
@@ -176,13 +186,12 @@ napi_value encode(napi_env env, napi_callback_info cbinfo) {
     goto out;
   }
   
-  napi_value cb = argv[3];
+  cb = argv[3];
 
 
-  encode_baton *baton = new encode_baton();
+  baton = new encode_baton();
   
   
-  napi_value encode_description;
   status = napi_create_string_utf8(env, "png encode", NAPI_AUTO_LENGTH, &encode_description);
   if (status != napi_ok) goto out;
   
